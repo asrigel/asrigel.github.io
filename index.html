@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rigel ANSI Studio</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-pencil" viewBox="0 0 16 16"><path d="M11 1h2v1h1v2L5 13H2v-3l9-9Zm-7 9v2h1l7-8-1-1-7 7Z"/></symbol>
+      <symbol id="icon-move" viewBox="0 0 16 16"><path d="M7 0h2v3h2L8 6 5 3h2V0Zm1 10 3 3H9v3H7v-3H5l3-3ZM0 7h3V5l3 3-3 3V9H0V7Zm10 1 3-3v2h3v2h-3v2l-3-3Z"/></symbol>
+      <symbol id="icon-select" viewBox="0 0 16 16"><path d="M1 1h5v2H3v3H1V1Zm9 0h5v5h-2V3h-3V1ZM1 10h2v3h3v2H1v-5Zm12 0h2v5h-5v-2h3v-3Z"/></symbol>
+      <symbol id="icon-lasso" viewBox="0 0 16 16"><path d="M4 2h7v1h2v2h1v5h-1v2h-2v1H9v2H6v-2h2v-1H4v-1H2V9H1V6h1V4h2V2Zm0 2v1H3v4h1v1h7V9h1V5h-1V4H4Z"/></symbol>
+      <symbol id="icon-eraser" viewBox="0 0 16 16"><path d="M9 2h3l3 3-8 8H4l-3-3 8-8Zm0 3-5 5 1 1h2l4-4-2-2Zm-6 9h12v1H3v-1Z"/></symbol>
+      <symbol id="icon-fill" viewBox="0 0 16 16"><path d="m7 1 7 7-6 6H4L1 11 7 5 5 3l2-2Zm1 5-5 5 2 2h2l5-5-4-4v2Zm5 5h2v4h-4v-2h2v-2Z"/></symbol>
+      <symbol id="icon-eyedropper" viewBox="0 0 16 16"><path d="M10 1h2l3 3v2l-3 3-2-2-6 6H1v-3l6-6 2 2 3-3-2-2ZM3 10v1h1l5-5-1-1-5 5Z"/></symbol>
+      <symbol id="icon-line" viewBox="0 0 16 16"><path d="M13 1h2v2h-2V1Zm-2 2h2v2h-2V3ZM9 5h2v2H9V5ZM7 7h2v2H7V7ZM5 9h2v2H5V9Zm-2 2h2v2H3v-2Zm-2 2h2v2H1v-2Z"/></symbol>
+      <symbol id="icon-rect" viewBox="0 0 16 16"><path d="M2 2h12v12H2V2Zm2 2v8h8V4H4Z"/></symbol>
+      <symbol id="icon-rect-fill" viewBox="0 0 16 16"><path d="M2 2h12v12H2V2Z"/></symbol>
+      <symbol id="icon-ellipse" viewBox="0 0 16 16"><path d="M5 1h6v1h2v2h2v8h-2v2h-2v1H5v-1H3v-2H1V4h2V2h2V1Zm0 2v1H3v8h2v1h6v-1h2V4h-2V3H5Z"/></symbol>
+      <symbol id="icon-spray" viewBox="0 0 16 16"><path d="M1 2h7v5H1V2Zm2 2v1h3V4H3Zm6-3h2v2H9V1Zm3 3h2v2h-2V4ZM9 7h2v2H9V7Zm4 2h2v2h-2V9Zm-4 3h2v2H9v-2Zm4 2h2v2h-2v-2Z"/></symbol>
+      <symbol id="icon-text" viewBox="0 0 16 16"><path d="M2 2h12v3h-2V4H9v9h2v2H5v-2h2V4H4v1H2V2Z"/></symbol>
+      <symbol id="icon-hand" viewBox="0 0 16 16"><path d="M6 1h2v5h1V2h2v4h1V3h2v7h-1v3h-2v2H6v-1H4v-2H3V8h2v2h1V1Zm1 7H6v4h1V8Zm3 0H9v4h1V8Zm3 0h-1v3h1V8Z"/></symbol>
+      <symbol id="icon-zoom" viewBox="0 0 16 16"><path d="M2 1h8v1h2v2h1v6h-1v1h-2v1H8v2H6v-2H2v-1H1V3h1V1Zm1 2v7h7V3H3Zm8 8h2v2h-2v-2Zm2 2h2v2h-2v-2ZM5 5h3v1H5V5Zm0 2h3v1H5V7Z"/></symbol>
+      <symbol id="icon-plus" viewBox="0 0 16 16"><path d="M7 2h2v5h5v2H9v5H7V9H2V7h5V2Z"/></symbol>
+      <symbol id="icon-copy" viewBox="0 0 16 16"><path d="M1 1h10v3h4v11H5v-3H1V1Zm2 2v7h2V4h4V3H3Zm4 3v7h6V6H7Z"/></symbol>
+      <symbol id="icon-up" viewBox="0 0 16 16"><path d="m8 2 6 6h-4v6H6V8H2l6-6Z"/></symbol>
+      <symbol id="icon-down" viewBox="0 0 16 16"><path d="M6 2h4v6h4l-6 6-6-6h4V2Z"/></symbol>
+      <symbol id="icon-trash" viewBox="0 0 16 16"><path d="M5 1h6v2h4v2h-1v10H2V5H1V3h4V1Zm-1 4v8h8V5H4Zm2 2h2v4H6V7Zm3 0h2v4H9V7Z"/></symbol>
+      <symbol id="icon-magic-select" viewBox="0 0 16 16"><path d="M1 1h2v2H1V1Zm4 0h6v2H7v2H5V1Zm8 2h2v2h-2V3ZM3 5h2v2H3V5Zm4 2h8v2h-3v2h-2V9H7V7Zm-6 4h2v2H1v-2Zm5 1h2v3H6v-3Zm6 0h2v2h-2v-2Z"/></symbol>
+      <symbol id="icon-magic-pencil" viewBox="0 0 16 16"><path d="M11 1h2v1h1v2L6 12H3V9l8-8Zm-7 8v2h1l7-7-1-1-7 6ZM1 1h2v2H1V1Zm4 1h2v2H5V2Zm8 7h2v2h-2V9ZM9 13h2v2H9v-2Z"/></symbol>
+    </svg>
+    <div class="app-window">
+      <header class="window-titlebar">
+        <div class="window-title">
+          <span class="app-icon">R</span>
+          <strong>Rigel ANSI Studio</strong>
+          <span class="document-name">untitled.rigel.json</span>
+        </div>
+        <button id="themeToggleBtn" class="theme-toggle-btn" type="button" title="Светлая тема (F8)" aria-label="Включить светлую тему">
+          <svg class="pixel-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M7 0h2v3H7V0Zm0 13h2v3H7v-3ZM0 7h3v2H0V7Zm13 0h3v2h-3V7ZM2 2h2v2H2V2Zm10 10h2v2h-2v-2Zm0-10h2v2h-2V2ZM2 12h2v2H2v-2Zm4-7h4v1h1v4h-1v1H6v-1H5V6h1V5Z" />
+          </svg>
+        </button>
+      </header>
+
+      <nav class="menu-bar" aria-label="Главное меню">
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="fileMenu" type="button" aria-expanded="false"><u>Ф</u>айл</button>
+          <div id="fileMenu" class="menu-popup" role="menu" hidden>
+            <button data-menu-action="new" type="button">Новый <kbd>⌘N</kbd></button>
+            <button data-menu-action="open" type="button">Открыть проект... <kbd>⌘O</kbd></button>
+            <button data-menu-action="save" type="button">Сохранить проект... <kbd>⌘S</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="import-text" type="button">Импорт TXT/ANS... <kbd>⌥⌘O</kbd></button>
+            <button data-menu-action="import-image" type="button">Импорт изображения... <kbd>⇧⌥⌘O</kbd></button>
+            <div class="menu-separator"></div>
+            <div class="menu-submenu">
+              <button class="menu-submenu-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                <span>Экспорт</span><span class="submenu-arrow">▶</span>
+              </button>
+              <div class="menu-popup menu-submenu-popup" role="menu">
+                <button data-menu-action="save" type="button">Проект .rigel.json <kbd>⌘S</kbd></button>
+                <div class="menu-separator"></div>
+                <button data-menu-action="export-ans" type="button">ANSI .ans <kbd>⌥⌘1</kbd></button>
+                <button data-menu-action="export-txt" type="button">Текст .txt <kbd>⌥⌘2</kbd></button>
+                <button data-menu-action="export-go" type="button">Go / Colorista .go <kbd>⌥⌘3</kbd></button>
+                <div class="menu-separator"></div>
+                <div class="menu-submenu">
+                  <button class="menu-submenu-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                    <span>Изображение</span><span class="submenu-arrow">▶</span>
+                  </button>
+                  <div class="menu-popup menu-submenu-popup" role="menu">
+                    <button data-menu-action="export-image-png" type="button">PNG с прозрачностью <kbd>⌥⌘4</kbd></button>
+                    <button data-menu-action="export-image-jpeg" type="button">JPEG, фон терминала <kbd>⌥⌘5</kbd></button>
+                    <button data-menu-action="export-image-webp" type="button">WebP с прозрачностью <kbd>⌥⌘6</kbd></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="editMenu" type="button" aria-expanded="false"><u>П</u>равка</button>
+          <div id="editMenu" class="menu-popup" role="menu" hidden>
+            <button data-menu-action="undo" type="button">Отменить <kbd>⌘Z</kbd></button>
+            <button data-menu-action="redo" type="button">Повторить <kbd>⇧⌘Z</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="selection-copy" type="button">Копировать выделение <kbd>⌘C</kbd></button>
+            <button data-menu-action="selection-cut" type="button">Вырезать <kbd>⌘X</kbd></button>
+            <button data-menu-action="selection-paste" type="button">Вставить <kbd>⌘V</kbd></button>
+            <button data-menu-action="selection-delete" type="button">Удалить выделение <kbd>Delete</kbd></button>
+            <button data-menu-action="selection-clear" type="button">Снять выделение <kbd>⌘D</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="layer-copy" type="button">Копировать активный слой <kbd>⇧⌘C</kbd></button>
+            <button data-menu-action="layer-paste" type="button">Вставить слой <kbd>⇧⌘V</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="copy-ansi" type="button">Копировать весь ANSI <kbd>⌥⌘A</kbd></button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="viewMenu" type="button" aria-expanded="false"><u>В</u>ид</button>
+          <div id="viewMenu" class="menu-popup" role="menu" hidden>
+            <button data-menu-action="zoom-50" type="button">50% <kbd>⌘5</kbd></button>
+            <button data-menu-action="zoom-100" type="button">100% <kbd>⌘0</kbd></button>
+            <button data-menu-action="zoom-150" type="button">150% <kbd>⌘1</kbd></button>
+            <button data-menu-action="zoom-fit" type="button">По размеру листа <kbd>⌘9</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="toggle-indicators" type="button">Скрыть / показать индикаторы <kbd>F9</kbd></button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="imageMenu" type="button" aria-expanded="false"><u>И</u>зображение</button>
+          <div id="imageMenu" class="menu-popup" role="menu" hidden>
+            <button data-menu-action="canvas-size" type="button">Размер холста... <kbd>⌥⌘C</kbd></button>
+            <button data-menu-action="clear" type="button">Очистить активный слой <kbd>⇧Delete</kbd></button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="layerMenu" type="button" aria-expanded="false"><u>С</u>лой</button>
+          <div id="layerMenu" class="menu-popup" role="menu" hidden>
+            <button data-menu-action="layer-new" type="button">Новый слой <kbd>⇧⌘N</kbd></button>
+            <button data-menu-action="layer-duplicate" type="button">Дублировать слой <kbd>⌘J</kbd></button>
+            <button data-menu-action="layer-delete" type="button">Удалить слой <kbd>⇧⌘Delete</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="layer-up" type="button">Переместить выше <kbd>⌥]</kbd></button>
+            <button data-menu-action="layer-down" type="button">Переместить ниже <kbd>⌥[</kbd></button>
+            <button data-menu-action="layer-lock" type="button">Заблокировать / разблокировать <kbd>⌥⌘L</kbd></button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="selectionMenu" type="button" aria-expanded="false"><u>В</u>ыделение</button>
+          <div id="selectionMenu" class="menu-popup" role="menu" hidden>
+            <button data-menu-action="selection-all" type="button">Выделить всё <kbd>⌘A</kbd></button>
+            <button data-menu-action="selection-clear" type="button">Снять выделение <kbd>⌘D</kbd></button>
+            <button data-menu-action="selection-invert" type="button">Инвертировать выделение <kbd>⇧⌘I</kbd></button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="colorsMenu" type="button" aria-expanded="false"><u>Ц</u>вета</button>
+          <div id="colorsMenu" class="menu-popup" role="menu" hidden>
+            <button data-menu-action="choose-fg" type="button">Основной цвет...</button>
+            <button data-menu-action="choose-bg" type="button">Фоновый цвет...</button>
+            <button data-menu-action="swap-colors" type="button">Поменять FG / BG <kbd>X</kbd></button>
+            <button data-menu-action="transparent-fg" type="button">Прозрачный знак <kbd>Q</kbd></button>
+            <button data-menu-action="transparent-bg" type="button">Прозрачный фон <kbd>⇧Q</kbd></button>
+            <button data-menu-action="reset-colors" type="button">Сбросить цвета <kbd>D</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="classic-palette" type="button">Классическая палитра</button>
+            <button data-menu-action="palette-manager" type="button">Сохраненные палитры...</button>
+            <button data-menu-action="save-palette" type="button">Сохранить палитру</button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="effectsMenu" type="button" aria-expanded="false"><u>Э</u>ффекты</button>
+          <div id="effectsMenu" class="menu-popup" role="menu" hidden>
+            <button data-menu-action="lighting" type="button">Освещение... <kbd>⌥1</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="effect-invert" type="button">Инверсия цветов <kbd>⌥2</kbd></button>
+            <button data-menu-action="effect-grayscale" type="button">Черно-белый <kbd>⌥3</kbd></button>
+            <button data-menu-action="effect-contrast" type="button">Высокий контраст <kbd>⌥4</kbd></button>
+            <button data-menu-action="effect-color-shift" type="button">Сдвиг цвета <kbd>⌥5</kbd></button>
+            <button data-menu-action="effect-dither" type="button">ANSI-дизеринг <kbd>⌥6</kbd></button>
+            <button data-menu-action="effect-posterize" type="button">Постеризация <kbd>⌥7</kbd></button>
+            <button data-menu-action="effect-sepia" type="button">Сепия <kbd>⌥8</kbd></button>
+            <button data-menu-action="effect-neon" type="button">Неон <kbd>⌥9</kbd></button>
+            <button data-menu-action="effect-glow" type="button">Свечение <kbd>⌥0</kbd></button>
+            <button data-menu-action="effect-shadow" type="button">Тень <kbd>⌥-</kbd></button>
+            <button data-menu-action="effect-3d-render" type="button">3D render / объем <kbd>⌥R</kbd></button>
+            <button data-menu-action="effect-emboss" type="button">Рельеф <kbd>⌥E</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="effect-mirror-x" type="button">Отразить по горизонтали <kbd>⌥H</kbd></button>
+            <button data-menu-action="effect-mirror-y" type="button">Отразить по вертикали <kbd>⌥V</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="texture" type="button">Шумовая текстура <kbd>⌥T</kbd></button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="windowMenu" type="button" aria-expanded="false"><u>О</u>кно</button>
+          <div id="windowMenu" class="menu-popup menu-popup-right" role="menu" hidden>
+            <button data-menu-action="toggle-tools" type="button">Инструменты <kbd>F6</kbd></button>
+            <button data-menu-action="toggle-inspector" type="button">Панели <kbd>F7</kbd></button>
+            <button data-menu-action="toggle-theme" type="button">Светлая / тёмная тема <kbd>F8</kbd></button>
+            <button data-menu-action="reset-layout" type="button">Сбросить расположение панелей</button>
+          </div>
+        </div>
+        <div class="menu-root">
+          <button class="menu-trigger" data-menu="helpMenu" type="button" aria-expanded="false"><u>С</u>правка</button>
+          <div id="helpMenu" class="menu-popup menu-popup-right" role="menu" hidden>
+            <button data-menu-action="shortcuts" type="button">Горячие клавиши <kbd>F1</kbd></button>
+            <button data-menu-action="about" type="button">О программе...</button>
+          </div>
+        </div>
+      </nav>
+
+      <section class="options-bar" aria-label="Параметры инструмента">
+        <span class="options-tool">Параметры</span>
+        <label class="brush-option">Кисть
+          <select id="brushMode">
+            <option value="free">Свой символ</option>
+            <option value="smart">Умная плотность</option>
+            <option value="blocks">Блоки █▓▒░</option>
+            <option value="halfblocks">Полублоки ▁▂▃▄</option>
+            <option value="shading">Штриховка ▓▒░</option>
+            <option value="dots">Точки •·</option>
+            <option value="ascii">ASCII @%#*</option>
+            <option value="letters">Буквы / строка</option>
+            <option value="binary">Двоичная 01</option>
+            <option value="hatch">Линии ╱╲╳</option>
+            <option value="box">Псевдографика ┼╬</option>
+          </select>
+        </label>
+        <label id="charsetOption" class="brush-option">Знаки
+          <select id="brushCharset">
+            <option value="blocks">Блоки</option>
+            <option value="halfblocks">Полублоки</option>
+            <option value="ascii">ASCII</option>
+            <option value="dots">Точки</option>
+            <option value="hatch">Штриховка</option>
+            <option value="box">Псевдографика</option>
+          </select>
+        </label>
+        <label id="symbolOption" class="brush-option">Символ <input id="symbolInput" maxlength="2" value="█" /></label>
+        <label id="textOption" class="option-text" hidden>Текст <input id="textInput" maxlength="80" value="" placeholder="Введите текст" /></label>
+        <label class="option-range brush-option">Размер
+          <input id="brushSize" type="range" min="1" max="8" value="1" />
+          <output id="brushSizeValue">1</output>
+        </label>
+        <label id="brushLevelOption" class="option-range brush-option">Плотность
+          <input id="brushLevel" type="range" min="10" max="100" step="10" value="70" />
+          <output id="brushLevelValue">▓</output>
+        </label>
+        <label id="smoothingOption" class="check-row brush-option">
+          <input id="brushSmoothing" type="checkbox" checked />
+          Сглаживание
+        </label>
+        <label id="magicToleranceOption" class="option-range selection-option" hidden>Допуск
+          <input id="magicTolerance" type="range" min="0" max="96" step="2" value="26" />
+          <output id="magicToleranceValue">26</output>
+        </label>
+        <label id="magicContiguousOption" class="check-row selection-option" hidden>
+          <input id="magicContiguous" type="checkbox" checked />
+          Смежные области
+        </label>
+      </section>
+
+      <section id="startScreen" class="start-screen" hidden>
+        <div class="start-content">
+          <div class="start-header">
+            <span class="start-logo">R</span>
+            <div><h1>Rigel</h1><p>ANSI Studio</p></div>
+          </div>
+          <div class="start-actions">
+            <button id="startNewProjectBtn" type="button">Новый проект</button>
+            <button id="startOpenProjectBtn" type="button">Открыть проект</button>
+          </div>
+          <h2>Недавние проекты</h2>
+          <div id="recentProjects" class="recent-projects"></div>
+        </div>
+      </section>
+
+      <div class="editor-layout">
+        <aside class="toolbox" aria-label="Инструменты">
+          <button class="tool-btn active" data-tool="pencil" type="button" title="Карандаш (P)"><svg class="tool-icon"><use href="#icon-pencil"/></svg></button>
+          <button class="tool-btn" data-tool="move" type="button" title="Перемещение (V)"><svg class="tool-icon"><use href="#icon-move"/></svg></button>
+          <button class="tool-btn" data-tool="select-rect" type="button" title="Прямоугольное выделение (M)"><svg class="tool-icon"><use href="#icon-select"/></svg></button>
+          <button class="tool-btn" data-tool="lasso" type="button" title="Лассо (A)"><svg class="tool-icon"><use href="#icon-lasso"/></svg></button>
+          <button class="tool-btn" data-tool="magic-select" type="button" title="Волшебное выделение (W)"><svg class="tool-icon"><use href="#icon-magic-select"/></svg></button>
+          <button class="tool-btn" data-tool="magic-pencil" type="button" title="Волшебный карандаш (Shift+W)"><svg class="tool-icon"><use href="#icon-magic-pencil"/></svg></button>
+          <button class="tool-btn" data-tool="eraser" type="button" title="Ластик (E)"><svg class="tool-icon"><use href="#icon-eraser"/></svg></button>
+          <button class="tool-btn" data-tool="fill" type="button" title="Заливка (F)"><svg class="tool-icon"><use href="#icon-fill"/></svg></button>
+          <button class="tool-btn" data-tool="eyedropper" type="button" title="Пипетка (I)"><svg class="tool-icon"><use href="#icon-eyedropper"/></svg></button>
+          <button class="tool-btn" data-tool="line" type="button" title="Линия (L)"><svg class="tool-icon"><use href="#icon-line"/></svg></button>
+          <button class="tool-btn" data-tool="rect" type="button" title="Рамка (R)"><svg class="tool-icon"><use href="#icon-rect"/></svg></button>
+          <button class="tool-btn" data-tool="rect-fill" type="button" title="Блок (G)"><svg class="tool-icon"><use href="#icon-rect-fill"/></svg></button>
+          <button class="tool-btn" data-tool="ellipse" type="button" title="Эллипс (O)"><svg class="tool-icon"><use href="#icon-ellipse"/></svg></button>
+          <button class="tool-btn" data-tool="spray" type="button" title="Распылитель (S)"><svg class="tool-icon"><use href="#icon-spray"/></svg></button>
+          <button class="tool-btn" data-tool="text" type="button" title="Текст (T)"><svg class="tool-icon"><use href="#icon-text"/></svg></button>
+          <button class="tool-btn" data-tool="pan" type="button" title="Рука (H)" aria-label="Рука">
+            <svg class="tool-icon pixel-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <use href="#icon-hand"/>
+            </svg>
+          </button>
+          <button class="tool-btn" data-tool="zoom" type="button" title="Масштаб (Z)"><svg class="tool-icon"><use href="#icon-zoom"/></svg></button>
+          <div class="tool-colors">
+            <button id="swapColorsBtn" type="button" title="Поменять цвета (X)">↗</button>
+            <span class="mini-fg"></span>
+            <span class="mini-bg"></span>
+          </div>
+        </aside>
+
+        <main class="workspace">
+          <div class="document-tabs">
+            <button id="showStartBtn" class="tab-home-btn" type="button" title="Стартовая страница">⌂</button>
+            <div id="documentTabList" class="document-tab-list"></div>
+            <button id="addDocumentTabBtn" class="tab-add-btn" type="button" title="Новая вкладка">＋</button>
+          </div>
+          <div class="canvas-shell">
+            <div class="ruler ruler-top"></div>
+            <div class="ruler ruler-left"></div>
+            <div id="canvasWrap" class="canvas-scroll">
+              <div class="canvas-center">
+                <div class="canvas-frame">
+                  <canvas id="editorCanvas" aria-label="ANSI холст"></canvas>
+                  <div id="lightMarkers" class="light-markers"></div>
+                  <button class="canvas-resize-handle edge-n" data-edge="n" type="button" aria-label="Изменить высоту сверху"></button>
+                  <button class="canvas-resize-handle edge-e" data-edge="e" type="button" aria-label="Изменить ширину справа"></button>
+                  <button class="canvas-resize-handle edge-s" data-edge="s" type="button" aria-label="Изменить высоту снизу"></button>
+                  <button class="canvas-resize-handle edge-w" data-edge="w" type="button" aria-label="Изменить ширину слева"></button>
+                  <button class="canvas-resize-handle corner-ne" data-edge="ne" type="button" aria-label="Изменить размер"></button>
+                  <button class="canvas-resize-handle corner-se" data-edge="se" type="button" aria-label="Изменить размер"></button>
+                  <button class="canvas-resize-handle corner-sw" data-edge="sw" type="button" aria-label="Изменить размер"></button>
+                  <button class="canvas-resize-handle corner-nw" data-edge="nw" type="button" aria-label="Изменить размер"></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        <aside id="rightDock" class="right-dock">
+          <section class="dock-panel color-panel" data-panel-id="color">
+            <h2>Цвет</h2>
+            <div class="color-editor">
+              <div class="color-stack">
+                <label class="color-chip fg-chip" title="Основной цвет">
+                  <input id="fgColor" type="color" value="#f8fafc" />
+                  <span>ЗНАК</span>
+                </label>
+                <label class="color-chip bg-chip" title="Фоновый цвет">
+                  <input id="bgColor" type="color" value="#0f172a" />
+                  <span>ФОН</span>
+                </label>
+              </div>
+              <button id="swapColorsPanelBtn" class="panel-icon-btn" type="button" title="Поменять цвета">↗</button>
+              <div class="color-spectrum" aria-hidden="true"></div>
+            </div>
+            <div class="transparency-actions">
+              <button id="fgTransparentBtn" type="button" title="Прозрачный знак">∅ Знак</button>
+              <button id="bgTransparentBtn" type="button" title="Прозрачный фон">∅ Фон</button>
+            </div>
+            <div id="paletteSwatches" class="swatches"></div>
+            <div class="panel-footer-actions">
+              <select id="palettePreset" aria-label="Палитра"></select>
+              <button id="savePalette" type="button" title="Сохранить текущую палитру">＋</button>
+              <button id="deletePalette" type="button" title="Удалить сохраненную палитру">⌫</button>
+            </div>
+          </section>
+
+          <section class="dock-panel layers-panel" data-panel-id="layers">
+            <h2>Слои</h2>
+            <div class="layer-settings">
+              <label>Непрозрачность
+                <input id="layerOpacity" type="range" min="0" max="100" value="100" />
+              </label>
+              <output id="layerOpacityValue">100%</output>
+            </div>
+            <div id="layerList" class="layer-list"></div>
+            <div class="layer-actions">
+              <button id="addLayerBtn" type="button" title="Новый слой"><svg class="tool-icon"><use href="#icon-plus"/></svg></button>
+              <button id="duplicateLayerBtn" type="button" title="Дублировать"><svg class="tool-icon"><use href="#icon-copy"/></svg></button>
+              <button id="layerUpBtn" type="button" title="Выше"><svg class="tool-icon"><use href="#icon-up"/></svg></button>
+              <button id="layerDownBtn" type="button" title="Ниже"><svg class="tool-icon"><use href="#icon-down"/></svg></button>
+              <button id="deleteLayerBtn" type="button" title="Удалить"><svg class="tool-icon"><use href="#icon-trash"/></svg></button>
+            </div>
+          </section>
+        </aside>
+      </div>
+
+      <footer class="status-bar">
+        <div id="statusBar" class="status-message">Готово · Карандаш · 80x25 · 100%</div>
+        <div class="zoom-control">
+          <button id="zoomOutBtn" type="button" aria-label="Уменьшить">−</button>
+          <input id="zoomRange" type="range" min="25" max="400" step="5" value="100" />
+          <button id="zoomFitBtn" type="button" aria-label="По размеру">Fit</button>
+          <button id="zoomInBtn" type="button" aria-label="Увеличить">+</button>
+          <output id="zoomValue">100%</output>
+        </div>
+      </footer>
+    </div>
+
+    <input id="projectInput" class="hidden-input" type="file" accept=".json,.rigel" />
+    <input id="importInput" class="hidden-input" type="file" accept=".txt,.ans,.json" />
+    <input id="imageInput" class="hidden-input" type="file" accept="image/*" />
+
+    <section id="lightingPanel" class="floating-panel" data-panel-id="lighting" hidden>
+      <header id="lightingPanelHeader" class="floating-panel-header">
+        <strong>Освещение</strong>
+        <div>
+          <button id="dockLightingBtn" type="button" title="Закрепить">◆</button>
+          <button id="closeLightingBtn" type="button" title="Закрыть">×</button>
+        </div>
+      </header>
+      <div class="floating-panel-body">
+        <label class="check-row"><input id="lightingEnabled" type="checkbox" /> Включить эффект</label>
+        <label>Размещение
+          <select id="lightingMode">
+            <option value="single">Одна точка объема</option>
+            <option value="multi">Несколько точек</option>
+          </select>
+        </label>
+        <label class="check-row"><input id="lightingVolume" type="checkbox" /> 3D объем</label>
+        <label>Цвет света <input id="lightingColor" type="color" value="#fff2cc" /></label>
+        <label>Сила <input id="lightingIntensity" type="range" min="0.05" max="1" step="0.05" value="0.7" /></label>
+        <label>Радиус <input id="lightingRadius" type="range" min="3" max="60" value="18" /></label>
+        <label>Высота <input id="lightingHeight" type="range" min="0.2" max="3" step="0.1" value="1.1" /></label>
+        <label class="check-row"><input id="technicalIndicators" type="checkbox" checked /> Показывать индикаторы</label>
+        <div id="selectedLightControls" class="selected-light-controls" hidden>
+          <strong id="selectedLightName">Точка света</strong>
+          <button id="deleteLightPointBtn" type="button">Удалить выбранную</button>
+          <small>Выберите точку на холсте и перетащите её мышью.</small>
+        </div>
+        <div class="floating-actions">
+          <button id="addLightPointBtn" type="button">Поставить точку</button>
+          <button id="clearLightsBtn" type="button">Очистить</button>
+        </div>
+      </div>
+    </section>
+
+    <dialog id="canvasSizeDialog" class="classic-dialog">
+      <div class="dialog-title">Размер холста</div>
+      <div class="dialog-body size-fields">
+        <label>Ширина <input id="canvasWidthInput" type="number" min="8" max="240" value="80" /></label>
+        <label>Высота <input id="canvasHeightInput" type="number" min="4" max="120" value="25" /></label>
+      </div>
+      <div class="dialog-actions">
+        <button data-dialog-close type="button">Отмена</button>
+        <button id="applyCanvasSizeBtn" type="button">Применить</button>
+      </div>
+    </dialog>
+
+    <dialog id="closeTabDialog" class="classic-dialog close-tab-dialog">
+      <div class="dialog-title">Закрыть вкладку</div>
+      <div class="dialog-body close-tab-message">
+        <strong id="closeTabName">Вкладка</strong>
+        <p>Вы потеряете прогресс в этой вкладке. Это действие нельзя отменить.</p>
+      </div>
+      <div class="dialog-actions">
+        <button data-dialog-close type="button">Отмена</button>
+        <button id="confirmCloseTabBtn" class="danger-button" type="button">Закрыть вкладку</button>
+      </div>
+    </dialog>
+
+    <dialog id="newTabDialog" class="classic-dialog new-tab-dialog">
+      <div class="dialog-title">Новая вкладка</div>
+      <div class="dialog-body project-fields">
+        <label>Название <input id="newTabName" type="text" value="Вкладка" maxlength="60" /></label>
+        <div class="project-size-row">
+          <label>Ширина <input id="newTabWidth" type="number" min="8" max="240" value="80" /></label>
+          <label>Высота <input id="newTabHeight" type="number" min="4" max="120" value="25" /></label>
+        </div>
+        <label class="check-row remember-tab-size">
+          <input id="rememberTabSize" type="checkbox" />
+          Запомнить размер для следующих вкладок
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button data-dialog-close type="button">Отмена</button>
+        <button id="createDocumentTabBtn" type="button">Создать</button>
+      </div>
+    </dialog>
+
+    <dialog id="imageImportDialog" class="classic-dialog image-import-dialog">
+      <div class="dialog-title">Импорт изображения</div>
+      <div class="dialog-body image-import-layout">
+        <div class="image-import-preview-wrap">
+          <img id="imageImportPreview" alt="Предпросмотр импортируемого изображения" />
+        </div>
+        <div class="image-import-fields">
+          <div class="project-size-row">
+            <label>Ширина <input id="imageImportWidth" type="number" min="8" max="240" value="80" /></label>
+            <label>Высота <input id="imageImportHeight" type="number" min="4" max="120" value="25" /></label>
+          </div>
+          <label>Вписывание
+            <select id="imageImportFit">
+              <option value="contain">Целиком</option>
+              <option value="cover">Заполнить с обрезкой</option>
+              <option value="stretch">Растянуть</option>
+            </select>
+          </label>
+          <label>Символы
+            <select id="imageImportCharset">
+              <option value="ascii">ASCII</option>
+              <option value="blocks">Блоки</option>
+              <option value="halfblocks">Полублоки</option>
+            </select>
+          </label>
+          <label>Слой
+            <select id="imageImportLayerMode">
+              <option value="new">Создать новый слой</option>
+              <option value="replace">Заменить активный слой</option>
+            </select>
+          </label>
+          <label class="check-row"><input id="imageImportDither" type="checkbox" checked /> Дизеринг</label>
+          <label class="check-row"><input id="imageImportTransparent" type="checkbox" checked /> Прозрачный фон</label>
+          <label class="check-row"><input id="imageImportResizeCanvas" type="checkbox" /> Изменить размер холста</label>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button data-dialog-close type="button">Отмена</button>
+        <button id="applyImageImportBtn" type="button">Импортировать</button>
+      </div>
+    </dialog>
+
+    <dialog id="newProjectDialog" class="classic-dialog new-project-dialog">
+      <div class="dialog-title">Новый проект</div>
+      <div class="dialog-body project-fields">
+        <label>Название <input id="newProjectName" type="text" value="Новый проект" /></label>
+        <label>Пресет
+          <select id="newProjectPreset">
+            <option value="terminal-large">Терминал большой — 120×40</option>
+            <option value="terminal-small">Терминал маленький — 80×25</option>
+            <option value="terminal-custom">Терминал свой — 100×30</option>
+            <option value="a4">A4 — 84×60</option>
+            <option value="square">Квадрат — 64×64</option>
+            <option value="custom">Пользовательский</option>
+          </select>
+        </label>
+        <div class="project-size-row">
+          <label>Ширина <input id="newProjectWidth" type="number" min="8" max="240" value="120" /></label>
+          <label>Высота <input id="newProjectHeight" type="number" min="4" max="120" value="40" /></label>
+        </div>
+        <fieldset class="orientation-control">
+          <legend>Ориентация</legend>
+          <label><input type="radio" name="projectOrientation" value="landscape" checked /> Горизонтальная</label>
+          <label><input type="radio" name="projectOrientation" value="portrait" /> Вертикальная</label>
+        </fieldset>
+      </div>
+      <div class="dialog-actions">
+        <button data-dialog-close type="button">Отмена</button>
+        <button id="createProjectBtn" type="button">Создать</button>
+      </div>
+    </dialog>
+
+    <dialog id="shortcutsDialog" class="classic-dialog">
+      <div class="dialog-title">Горячие клавиши</div>
+      <div class="dialog-body shortcut-list">
+        <span>Отменить / повторить</span><kbd>⌘Z / ⇧⌘Z</kbd>
+        <span>Открыть / сохранить</span><kbd>⌘O / ⌘S</kbd>
+        <span>Инструменты</span><kbd>P V M A W ⇧W E F I L R G O S T H Z</kbd>
+        <span>Знак / фон без цвета</span><kbd>Q / ⇧Q</kbd>
+        <span>Слои</span><kbd>⇧⌘N · ⌘J · ⌥[ ]</kbd>
+        <span>Эффекты</span><kbd>⌥1…0 · ⌥- · ⌥R · ⌥E</kbd>
+        <span>Панели / индикаторы</span><kbd>F6 / F7 / F9</kbd>
+        <span>Размер кисти / масштаб</span><kbd>[ ] / − + / ⌘9</kbd>
+        <span>Поменять / сбросить цвета</span><kbd>X / D</kbd>
+      </div>
+      <div class="dialog-actions"><button data-dialog-close type="button">OK</button></div>
+    </dialog>
+
+    <dialog id="aboutDialog" class="classic-dialog">
+      <div class="dialog-title">О программе</div>
+      <div class="dialog-body about-content">
+        <span class="about-icon">R</span>
+        <div><strong>Rigel ANSI Studio</strong><p>Редактор цветной терминальной графики.</p></div>
+      </div>
+      <div class="dialog-actions"><button data-dialog-close type="button">OK</button></div>
+    </dialog>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
