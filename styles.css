@@ -1391,11 +1391,12 @@ canvas.selection-dragging {
 .classic-dialog::backdrop {
   background: rgba(0, 0, 0, 0.55);
 }
+
 .dialog {
   display: inline-block;
   width: fit-content;
   min-width: max-content;
-  max-width: 90vw;
+  max-width: 400px;
   background: white;
 }
 
@@ -1407,6 +1408,7 @@ canvas.selection-dragging {
 
 .dialog-body {
   padding: 18px;
+  overflow-wrap: break-word;
 }
 
 .dialog-actions {
