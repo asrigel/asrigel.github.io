@@ -6,18 +6,37 @@ export class Renderer {
     this.cellWidth = 12;
     this.cellHeight = 18;
     this.zoom = 1;
+    this.dpr = 1;
+    this.baseWidth = 0;
+    this.baseHeight = 0;
     this.dirtyRects = [];
     this.selection = null;
     this.layers = null;
+    this.font = '';
   }
 
   resize() {
     const width = this.grid.width * this.cellWidth;
     const height = this.grid.height * this.cellHeight;
-    this.canvas.width = width;
-    this.canvas.height = height;
+    const dpr = Math.max(1, Math.min(4, window.devicePixelRatio || 1));
+    const physicalWidth = Math.max(1, Math.round(width * dpr));
+    const physicalHeight = Math.max(1, Math.round(height * dpr));
+    const resized = this.canvas.width !== physicalWidth
+      || this.canvas.height !== physicalHeight
+      || this.baseWidth !== width
+      || this.baseHeight !== height
+      || this.dpr !== dpr;
+    this.baseWidth = width;
+    this.baseHeight = height;
+    this.dpr = dpr;
+    if (resized) {
+      this.canvas.width = physicalWidth;
+      this.canvas.height = physicalHeight;
+    }
     this.applyZoom();
-    this.ctx.font = `${this.cellHeight}px Menlo, Consolas, monospace`;
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.font = `${this.cellHeight}px Menlo, Consolas, monospace`;
+    this.ctx.font = this.font;
     this.ctx.textBaseline = 'top';
   }
 
@@ -39,8 +58,8 @@ export class Renderer {
   }
 
   applyZoom() {
-    this.canvas.style.width = `${this.canvas.width * this.zoom}px`;
-    this.canvas.style.height = `${this.canvas.height * this.zoom}px`;
+    this.canvas.style.width = `${this.baseWidth * this.zoom}px`;
+    this.canvas.style.height = `${this.baseHeight * this.zoom}px`;
   }
 
   queueDirty(x, y) {
@@ -49,7 +68,10 @@ export class Renderer {
 
   render() {
     const ctx = this.ctx;
-    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    ctx.clearRect(0, 0, this.baseWidth, this.baseHeight);
+    ctx.font = this.font;
+    ctx.textBaseline = 'top';
 
     const layers = this.layers?.length ? this.layers : [{ grid: this.grid, opacity: 1 }];
     layers.forEach(({ grid, opacity = 1 }) => {

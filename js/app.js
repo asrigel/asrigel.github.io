@@ -4,6 +4,11 @@ import { BrushEngine } from './brushEngine.js';
 import { AnsiExporter } from './exporter.js';
 import { History } from './history.js';
 import { clamp, hexToRgb, mixColors, rgbToHex } from './utils.js';
+import { EventBus } from './core/eventBus.js';
+import { PluginManager } from './core/pluginManager.js';
+import { ProjectLoader } from './core/projectLoader.js';
+import { createLightingPlugin, lightingAt } from './effects/lightingPlugin.js';
+import { createBuiltinLayerEffectPlugins } from './effects/builtinLayerPlugins.js';
 
 const CANVAS_MIN_WIDTH = 8;
 const CANVAS_MIN_HEIGHT = 4;
@@ -13,6 +18,8 @@ const CANVAS_MAX_HEIGHT = Number.POSITIVE_INFINITY;
 class App {
   constructor() {
     this.canvas = document.getElementById('editorCanvas');
+    this.eventBus = new EventBus();
+    this.projectLoader = new ProjectLoader();
     this.grid = new ANSIGrid(80, 25);
     this.layers = [{
       id: crypto.randomUUID?.() || String(Date.now()),
@@ -25,6 +32,25 @@ class App {
     }];
     this.activeLayerIndex = 0;
     this.renderer = new Renderer(this.canvas, this.grid);
+    this.pluginManager = new PluginManager({
+      app: this,
+      eventBus: this.eventBus,
+      ANSIGrid,
+      clamp,
+      hexToRgb,
+      mixColors,
+      rgbToHex,
+      publicApi: {
+        ANSIGrid,
+        clamp,
+        hexToRgb,
+        mixColors,
+        rgbToHex,
+        version: '1.0.0',
+      },
+    });
+    this.pluginManager.register(createLightingPlugin());
+    createBuiltinLayerEffectPlugins().forEach((plugin) => this.pluginManager.register(plugin));
     this.brushEngine = new BrushEngine(this.grid);
     this.exporter = new AnsiExporter(this.grid);
     this.history = new History(() => ({
@@ -109,6 +135,13 @@ class App {
     this.uiTheme = localStorage.getItem('rigel-ui-theme') === 'light' ? 'light' : 'dark';
     this.autosaveReady = false;
     this.autosaveTimer = null;
+    this.renderScheduled = false;
+    this.lastRenderAt = 0;
+    this.zoomAnimation = null;
+    this.zoomWheelRemainder = 0;
+    this.lightMarkerFrame = null;
+    this.zoomStatusFrame = null;
+    this.customPluginSources = this.readCustomPluginSources();
 
     this.bindEvents();
     this.applyUiTheme();
@@ -124,6 +157,7 @@ class App {
     this.updatePreview();
     this.updateLayers();
     this.renderDocumentTabs();
+    this.restoreCustomPlugins();
   }
 
   bindEvents() {
@@ -232,6 +266,16 @@ class App {
     this.bindIfExists('importInput', 'change', (event) => this.importFile(event.target.files?.[0]));
     this.bindIfExists('projectInput', 'change', (event) => this.loadProjectFile(event.target.files?.[0]));
     this.bindIfExists('imageInput', 'change', (event) => this.importImage(event.target.files?.[0]));
+    this.bindIfExists('pluginInput', 'change', (event) => this.loadPluginFile(event.target.files?.[0]));
+    this.bindIfExists('loadPluginBtn', 'click', () => document.getElementById('pluginInput').click());
+    this.bindIfExists('reloadCustomPluginsBtn', 'click', () => this.reloadCustomPlugins());
+    this.bindIfExists('cancelProjectLoadBtn', 'click', () => this.cancelProjectLoad());
+    this.bindIfExists('commandPaletteInput', 'input', () => this.renderCommandPalette());
+    this.bindIfExists('commandPaletteInput', 'keydown', (event) => this.onCommandPaletteKeydown(event));
+    document.getElementById('commandPaletteDialog')?.addEventListener('close', () => {
+      const input = document.getElementById('commandPaletteInput');
+      if (input) input.value = '';
+    });
     this.bindIfExists('imageImportWidth', 'change', () => this.clampImageImportFields());
     this.bindIfExists('imageImportHeight', 'change', () => this.clampImageImportFields());
     this.bindIfExists('applyImageImportBtn', 'click', () => {
@@ -425,6 +469,11 @@ class App {
     }
 
     if (command) {
+      if (event.shiftKey && key === 'p') {
+        event.preventDefault();
+        this.openCommandPalette();
+        return;
+      }
       if (event.altKey && event.code === 'KeyC') return run('canvas-size');
       if (event.altKey && event.code === 'KeyO') return run(event.shiftKey ? 'import-image' : 'import-text');
       if (event.altKey && event.code === 'KeyA') return run('copy-ansi');
@@ -615,6 +664,10 @@ class App {
   }
 
   runMenuAction(action) {
+    if (action?.startsWith('plugin-run:')) {
+      this.applyPluginLayerEffect(action.slice('plugin-run:'.length));
+      return;
+    }
     const actions = {
       new: () => this.openNewProjectDialog(),
       open: () => document.getElementById('projectInput').click(),
@@ -675,6 +728,7 @@ class App {
       'effect-shadow': () => this.applyLayerEffect('shadow'),
       'effect-3d-render': () => this.applyLayerEffect('3d-render'),
       'effect-emboss': () => this.applyLayerEffect('emboss'),
+      'remove-flat-background': () => this.removeFlatBackgroundFromActiveLayer(),
       'effect-mirror-x': () => this.applyLayerEffect('mirror-x'),
       'effect-mirror-y': () => this.applyLayerEffect('mirror-y'),
       'choose-fg': () => document.getElementById('fgColor').click(),
@@ -693,9 +747,107 @@ class App {
       'save-palette': () => document.getElementById('savePalette').click(),
       shortcuts: () => document.getElementById('shortcutsDialog').showModal(),
       about: () => document.getElementById('aboutDialog').showModal(),
+      'command-palette': () => this.openCommandPalette(),
+      plugins: () => this.openPluginManager(),
+      'plugin-load': () => document.getElementById('pluginInput').click(),
     };
 
     actions[action]?.();
+  }
+
+  commandPaletteItems() {
+    const baseItems = [
+      ['Новый проект', 'new', '⌘N'],
+      ['Открыть проект', 'open', '⌘O'],
+      ['Сохранить проект', 'save', '⌘S'],
+      ['Импорт изображения', 'import-image', '⇧⌥⌘O'],
+      ['Экспорт PNG', 'export-image-png', '⌥⌘4'],
+      ['Карандаш', 'tool:pencil', 'P'],
+      ['Ластик', 'tool:eraser', 'E'],
+      ['Заливка', 'tool:fill', 'F'],
+      ['Лассо', 'tool:lasso', 'A'],
+      ['Магическое выделение', 'tool:magic-select', 'W'],
+      ['Рука', 'tool:pan', 'H'],
+      ['Масштаб', 'tool:zoom', 'Z'],
+      ['Освещение', 'lighting', '⌥1'],
+      ['3D render / объем', 'effect-3d-render', '⌥R'],
+      ['Удалить однотонный фон слоя', 'remove-flat-background', ''],
+      ['По размеру листа', 'zoom-fit', '⌘9'],
+      ['100%', 'zoom-100', '⌘0'],
+      ['Светлая / темная тема', 'toggle-theme', 'F8'],
+      ['Показать / скрыть индикаторы', 'toggle-indicators', 'F9'],
+      ['Снять выделение', 'selection-clear', '⌘D'],
+      ['Выделить все', 'selection-all', '⌘A'],
+      ['Плагины', 'plugins', ''],
+      ['Загрузить plugin', 'plugin-load', ''],
+    ].map(([label, action, shortcut]) => ({ label, action, shortcut }));
+    const pluginItems = this.pluginManager.getLayerEffects().map((plugin) => ({
+      label: `Plugin: ${plugin.manifest.name}`,
+      action: `plugin:${plugin.manifest.id}`,
+      shortcut: '',
+    }));
+    return [...baseItems, ...pluginItems];
+  }
+
+  openCommandPalette() {
+    const dialog = document.getElementById('commandPaletteDialog');
+    const input = document.getElementById('commandPaletteInput');
+    if (!dialog || !input) return;
+    dialog.style.display = '';
+    if (!dialog.open) dialog.showModal();
+    input.value = '';
+    this.renderCommandPalette();
+    requestAnimationFrame(() => input.focus());
+  }
+
+  renderCommandPalette() {
+    const list = document.getElementById('commandPaletteList');
+    const input = document.getElementById('commandPaletteInput');
+    if (!list || !input) return;
+    const query = input.value.trim().toLowerCase();
+    const items = this.commandPaletteItems()
+      .filter((item) => !query || item.label.toLowerCase().includes(query) || item.action.toLowerCase().includes(query))
+      .slice(0, 18);
+    list.innerHTML = '';
+    items.forEach((item, index) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `command-palette-item${index === 0 ? ' active' : ''}`;
+      button.dataset.action = item.action;
+      const label = document.createElement('span');
+      const shortcut = document.createElement('kbd');
+      label.textContent = item.label;
+      shortcut.textContent = item.shortcut || '';
+      button.append(label, shortcut);
+      button.addEventListener('click', () => this.executeCommandPaletteItem(item.action));
+      list.appendChild(button);
+    });
+  }
+
+  onCommandPaletteKeydown(event) {
+    const list = [...document.querySelectorAll('.command-palette-item')];
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      document.getElementById('commandPaletteDialog')?.close();
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const active = list.find((item) => item.classList.contains('active')) || list[0];
+    if (active) this.executeCommandPaletteItem(active.dataset.action);
+  }
+
+  executeCommandPaletteItem(action) {
+    document.getElementById('commandPaletteDialog')?.close();
+    if (action?.startsWith('tool:')) {
+      this.selectTool(action.slice(5));
+      return;
+    }
+    if (action?.startsWith('plugin:')) {
+      this.applyPluginLayerEffect(action.slice(7));
+      return;
+    }
+    this.runMenuAction(action);
   }
 
   applyUiTheme() {
@@ -721,6 +873,176 @@ class App {
     localStorage.setItem('rigel-show-technical-indicators', String(this.showTechnicalIndicators));
     this.updateLightingControls();
     this.updateLightMarkers();
+  }
+
+  readCustomPluginSources() {
+    try {
+      const saved = JSON.parse(localStorage.getItem('rigel-custom-plugins') || '[]');
+      return Array.isArray(saved) ? saved.filter((item) => item?.source && item?.name).slice(-20) : [];
+    } catch {
+      localStorage.removeItem('rigel-custom-plugins');
+      return [];
+    }
+  }
+
+  persistCustomPluginSources() {
+    try {
+      localStorage.setItem('rigel-custom-plugins', JSON.stringify(this.customPluginSources));
+    } catch (error) {
+      console.warn('Custom plugins were not persisted', error);
+    }
+  }
+
+  async restoreCustomPlugins() {
+    for (const pluginSource of this.customPluginSources) {
+      try {
+        await this.registerPluginSource(pluginSource.source, pluginSource.name, { persist: false });
+      } catch (error) {
+        console.warn(`Custom plugin restore failed: ${pluginSource.name}`, error);
+      }
+    }
+    this.renderPluginList();
+  }
+
+  async reloadCustomPlugins() {
+    for (const plugin of this.pluginManager.list().filter((item) => item.custom)) {
+      this.pluginManager.unregister(plugin.id);
+    }
+    await this.restoreCustomPlugins();
+    const status = document.getElementById('statusBar');
+    if (status) status.textContent = 'Свои плагины перезагружены';
+  }
+
+  async loadPluginFile(file) {
+    if (!file) return;
+    try {
+      const source = await file.text();
+      await this.registerPluginSource(source, file.name, { persist: true });
+      this.openPluginManager();
+      const status = document.getElementById('statusBar');
+      if (status) status.textContent = `Plugin загружен: ${file.name}`;
+    } catch (error) {
+      console.error('Plugin load failed', error);
+      const status = document.getElementById('statusBar');
+      if (status) status.textContent = 'Не удалось загрузить plugin';
+    } finally {
+      document.getElementById('pluginInput').value = '';
+    }
+  }
+
+  async registerPluginSource(source, name, { persist = true } = {}) {
+    const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+    try {
+      const module = await import(`${url}#${Date.now()}`);
+      const exported = module.default || module.plugin || module.createPlugin;
+      const plugin = typeof exported === 'function' ? exported(this.pluginManager.publicApi) : exported;
+      if (!plugin?.manifest?.id) throw new Error('Plugin must export manifest.id');
+      if (!['effect', 'layer-effect'].includes(plugin.type)) throw new Error('Plugin type must be effect or layer-effect');
+      plugin.custom = true;
+      plugin.manifest = {
+        version: '0.0.0',
+        dependencies: [],
+        sandbox: 'user-es-module',
+        ...plugin.manifest,
+      };
+      this.pluginManager.register(plugin);
+      if (persist) {
+        this.customPluginSources = [
+          ...this.customPluginSources.filter((item) => item.id !== plugin.manifest.id && item.name !== name),
+          { id: plugin.manifest.id, name, source },
+        ].slice(-20);
+        this.persistCustomPluginSources();
+      }
+      this.renderPluginList();
+      return plugin;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  openPluginManager() {
+    this.renderPluginList();
+    const dialog = document.getElementById('pluginManagerDialog');
+    if (!dialog) return;
+    dialog.style.display = '';
+    if (!dialog.open) dialog.showModal();
+  }
+
+  renderPluginList() {
+    const list = document.getElementById('pluginList');
+    if (!list) return;
+    list.innerHTML = '';
+    this.pluginManager.list().forEach((plugin) => {
+      const card = document.createElement('div');
+      card.className = 'plugin-card';
+      const meta = document.createElement('div');
+      const title = document.createElement('strong');
+      const details = document.createElement('small');
+      title.textContent = plugin.name || plugin.id;
+      details.textContent = `${plugin.type} · v${plugin.version || '0.0.0'} · ${plugin.sandbox || 'default'}${plugin.custom ? ' · custom' : ''}`;
+      meta.append(title, details);
+
+      const actions = document.createElement('div');
+      actions.className = 'plugin-card-actions';
+      if (plugin.type === 'layer-effect') {
+        const apply = document.createElement('button');
+        apply.type = 'button';
+        apply.textContent = 'Применить';
+        apply.addEventListener('click', () => this.applyPluginLayerEffect(plugin.id));
+        actions.appendChild(apply);
+      }
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.textContent = plugin.enabled ? 'Выкл' : 'Вкл';
+      toggle.addEventListener('click', () => {
+        this.pluginManager.setEnabled(plugin.id, !plugin.enabled);
+        this.renderPluginList();
+        this.render();
+      });
+      actions.appendChild(toggle);
+      if (plugin.custom) {
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = 'Удалить';
+        remove.addEventListener('click', () => this.removeCustomPlugin(plugin.id));
+        actions.appendChild(remove);
+      }
+      card.append(meta, actions);
+      list.appendChild(card);
+    });
+  }
+
+  removeCustomPlugin(pluginId) {
+    const plugin = this.pluginManager.get(pluginId);
+    this.pluginManager.unregister(pluginId);
+    if (plugin?.custom) {
+      this.customPluginSources = this.customPluginSources.filter((item) => item.id !== pluginId);
+      this.persistCustomPluginSources();
+    }
+    this.renderPluginList();
+    this.render();
+  }
+
+  applyPluginLayerEffect(pluginId) {
+    const plugin = this.pluginManager.get(pluginId);
+    if (!plugin) return;
+    try {
+      this.history.capture();
+      const result = this.pluginManager.applyLayerEffect(pluginId, this.grid, {
+        selection: this.selection,
+        colors: { fg: this.fgColor, bg: this.bgColor },
+      });
+      if (result) this.setActiveGrid(result);
+      this.touchActiveDocument();
+      this.render();
+      this.persistLocalProject();
+      const status = document.getElementById('statusBar');
+      if (status) status.textContent = `Plugin применён: ${plugin.manifest.name}`;
+    } catch (error) {
+      console.error('Plugin effect failed', error);
+      const status = document.getElementById('statusBar');
+      if (status) status.textContent = `Plugin упал: ${plugin.manifest.name}`;
+    }
   }
 
   readSavedPalettes() {
@@ -904,6 +1226,14 @@ class App {
   }
 
   render() {
+    if (this.renderScheduled) return;
+    this.renderScheduled = true;
+    requestAnimationFrame(() => this.flushRender());
+  }
+
+  flushRender() {
+    this.renderScheduled = false;
+    this.lastRenderAt = performance.now();
     const composite = this.applyLighting(this.composeLayers());
     const displayLayers = this.layers
       .filter((layer) => layer.visible && layer.opacity > 0)
@@ -1021,25 +1351,7 @@ class App {
   }
 
   applyLighting(grid) {
-    if (!this.lighting.enabled || !this.lighting.points.length) return grid;
-    const lit = grid.clone();
-    for (let y = 0; y < lit.height; y += 1) {
-      for (let x = 0; x < lit.width; x += 1) {
-        const cell = lit.getCell(x, y);
-        if (!cell || cell.empty) continue;
-        const lighting = this.surfaceLightingAt(grid, x, y, this.lighting.volumeEnabled ? 'volume-live' : 'live');
-        let fg = cell.fg;
-        let bg = cell.bg;
-        if ((cell.fgAlpha ?? 1) > 0) {
-          fg = mixColors(mixColors(fg, '#000000', lighting.shadow), lighting.color, lighting.highlight);
-        }
-        if ((cell.bgAlpha ?? 1) > 0) {
-          bg = mixColors(mixColors(bg, '#000000', lighting.shadow * 0.8), lighting.color, lighting.highlight * 0.42);
-        }
-        lit.setCell(x, y, { fg, bg });
-      }
-    }
-    return lit;
+    return this.pluginManager.applyEffects(grid, { effectScope: 'display' });
   }
 
   cellHeightValue(grid, x, y) {
@@ -1063,38 +1375,7 @@ class App {
   }
 
   surfaceLightingAt(grid, x, y, mode = 'effect') {
-    const points = this.lighting.points?.length
-      ? this.lighting.points.map((point) => this.normalizeLightPoint(point))
-      : [{ x: -grid.width * 0.25, y: -grid.height * 0.3, color: '#ffffff', intensity: 0.85, radius: Math.max(grid.width, grid.height), height: 1.2 }];
-    const volumeMode = mode === 'volume-live' || mode === 'effect' || mode === 'emboss';
-    const normal = this.surfaceNormal(grid, x, y, mode === 'live' ? 0.55 : mode === 'volume-live' ? 1.55 : 1.35);
-    let highlight = mode === 'live' ? 0 : mode === 'volume-live' ? 0.03 : 0.04;
-    let shadow = mode === 'live' ? 0.01 : mode === 'volume-live' ? 0.16 : 0.18;
-    let color = '#ffffff';
-
-    points.forEach((point) => {
-      const radius = Math.max(1, Number(point.radius ?? this.lighting.radius));
-      const intensity = Number(point.intensity ?? this.lighting.intensity);
-      const height = Number(point.height ?? this.lighting.height ?? 1.1);
-      const lx = point.x - x;
-      const ly = point.y - y;
-      const lz = clamp(height, 0.2, 3) * 7;
-      const lightLength = Math.hypot(lx, ly, lz) || 1;
-      const distance = Math.hypot(lx, ly);
-      const falloff = Math.pow(clamp(1 - distance / radius, 0, 1), 1.22);
-      if (falloff <= 0) return;
-      const dot = clamp(normal.x * (lx / lightLength) + normal.y * (ly / lightLength) + normal.z * (lz / lightLength), 0, 1);
-      const amount = falloff * intensity * (volumeMode ? 0.12 + dot * 1.08 : 0.38 + dot * 0.42);
-      highlight += amount;
-      shadow -= amount * (volumeMode ? 0.26 : 0.5);
-      color = mixColors(color, point.color || this.lighting.color, clamp(falloff * intensity * 0.55, 0, 1));
-    });
-
-    return {
-      color,
-      highlight: clamp(highlight, 0, mode === 'live' ? 0.62 : mode === 'volume-live' ? 1 : 1.1),
-      shadow: clamp(shadow, 0, mode === 'live' ? 0.18 : mode === 'volume-live' ? 0.62 : 0.72),
-    };
+    return lightingAt(grid, x, y, this.lighting, mode);
   }
 
   setActiveGrid(grid) {
@@ -1627,8 +1908,10 @@ class App {
 
   getCanvasPoint(event) {
     const rect = this.canvas.getBoundingClientRect();
-    const scaleX = this.grid.width / rect.width;
-    const scaleY = this.grid.height / rect.height;
+    const rectWidth = rect.width || this.canvas.offsetWidth || this.renderer.baseWidth * (this.zoom / 100) || 1;
+    const rectHeight = rect.height || this.canvas.offsetHeight || this.renderer.baseHeight * (this.zoom / 100) || 1;
+    const scaleX = this.grid.width / rectWidth;
+    const scaleY = this.grid.height / rectHeight;
     const x = Math.floor((event.clientX - rect.left) * scaleX);
     const y = Math.floor((event.clientY - rect.top) * scaleY);
     return { x: clamp(x, 0, this.grid.width - 1), y: clamp(y, 0, this.grid.height - 1) };
@@ -2095,6 +2378,37 @@ class App {
       activeLayerIndex: this.activeLayerIndex,
       lighting: structuredClone(this.lighting),
     };
+  }
+
+  serializeHistorySnapshot(snapshot) {
+    if (!snapshot?.layers) return snapshot;
+    return {
+      ...snapshot,
+      layers: snapshot.layers.map((layer) => ({
+        ...layer,
+        grid: layer.grid?.toSparseJSON ? layer.grid.toSparseJSON() : layer.grid,
+      })),
+    };
+  }
+
+  deserializeHistorySnapshot(snapshot) {
+    if (!snapshot?.layers) return snapshot;
+    return {
+      ...snapshot,
+      layers: snapshot.layers.map((layer, index) => ({
+        ...layer,
+        id: layer.id || `${Date.now()}-${index}`,
+        grid: layer.grid instanceof ANSIGrid ? layer.grid : ANSIGrid.fromJSON(layer.grid),
+      })),
+    };
+  }
+
+  serializeHistoryStack(stack = []) {
+    return stack.slice(-30).map((snapshot) => this.serializeHistorySnapshot(snapshot));
+  }
+
+  deserializeHistoryStack(stack = []) {
+    return stack.slice(-30).map((snapshot) => this.deserializeHistorySnapshot(snapshot));
   }
 
   stashActiveDocument() {
@@ -2608,6 +2922,81 @@ class App {
     this.render();
   }
 
+  removeFlatBackgroundFromActiveLayer() {
+    const grid = this.grid;
+    const edgeColors = [];
+    const collect = (x, y) => {
+      const cell = grid.getCell(x, y);
+      if (!cell || cell.empty || (cell.bgAlpha ?? 0) <= 0) return;
+      edgeColors.push(hexToRgb(cell.bg));
+    };
+    for (let x = 0; x < grid.width; x += 1) {
+      collect(x, 0);
+      collect(x, grid.height - 1);
+    }
+    for (let y = 1; y < grid.height - 1; y += 1) {
+      collect(0, y);
+      collect(grid.width - 1, y);
+    }
+    if (!edgeColors.length) return;
+    const bg = edgeColors.reduce((acc, color) => ({
+      r: acc.r + color.r / edgeColors.length,
+      g: acc.g + color.g / edgeColors.length,
+      b: acc.b + color.b / edgeColors.length,
+    }), { r: 0, g: 0, b: 0 });
+    const maxDistance = Math.max(...edgeColors.map((color) => Math.hypot(color.r - bg.r, color.g - bg.g, color.b - bg.b)));
+    if (maxDistance > 42) {
+      const status = document.getElementById('statusBar');
+      if (status) status.textContent = 'Фон слоя не похож на однотонный';
+      return;
+    }
+
+    this.history.capture();
+    const visited = new Uint8Array(grid.width * grid.height);
+    const queue = [];
+    const matches = (cell) => {
+      if (!cell || cell.empty || (cell.bgAlpha ?? 0) <= 0) return false;
+      const color = hexToRgb(cell.bg);
+      return Math.hypot(color.r - bg.r, color.g - bg.g, color.b - bg.b) <= 42;
+    };
+    const enqueue = (x, y) => {
+      if (x < 0 || y < 0 || x >= grid.width || y >= grid.height) return;
+      const index = y * grid.width + x;
+      if (visited[index]) return;
+      if (!matches(grid.getCell(x, y))) return;
+      visited[index] = 1;
+      queue.push(index);
+    };
+    for (let x = 0; x < grid.width; x += 1) {
+      enqueue(x, 0);
+      enqueue(x, grid.height - 1);
+    }
+    for (let y = 1; y < grid.height - 1; y += 1) {
+      enqueue(0, y);
+      enqueue(grid.width - 1, y);
+    }
+    for (let head = 0; head < queue.length; head += 1) {
+      const index = queue[head];
+      const x = index % grid.width;
+      const y = Math.floor(index / grid.width);
+      const cell = grid.getCell(x, y);
+      if ((cell.fgAlpha ?? 0) > 0 && cell.char?.trim()) {
+        grid.setCell(x, y, { bgAlpha: 0 });
+      } else {
+        grid.clearCell(x, y);
+      }
+      enqueue(x + 1, y);
+      enqueue(x - 1, y);
+      enqueue(x, y + 1);
+      enqueue(x, y - 1);
+    }
+    this.touchActiveDocument();
+    this.render();
+    this.persistLocalProject();
+    const status = document.getElementById('statusBar');
+    if (status) status.textContent = `Удалён фон слоя: ${queue.length} ячеек`;
+  }
+
   applyLayerEffect(type) {
     if (type === '3d-render') {
       this.lighting.volumeEnabled = true;
@@ -2814,48 +3203,76 @@ class App {
     status.textContent = `Готово · ${tool} · ${this.grid.width}x${this.grid.height} · ${this.zoom}%${coords}`;
   }
 
-  setZoom(value) {
+  setZoom(value, options = {}) {
     if (value === 'fit') {
       this.zoomMode = 'fit';
       this.fitZoomToView();
       return;
     }
     this.zoomMode = 'manual';
+    const wrap = document.getElementById('canvasWrap');
+    if (options.preserveCenter !== false && wrap) {
+      const rect = wrap.getBoundingClientRect();
+      this.zoomAtClientPoint(rect.left + rect.width / 2, rect.top + rect.height / 2, value, options);
+      return;
+    }
     this.applyZoomValue(value);
   }
 
   applyZoomValue(value) {
-    this.zoom = clamp(Math.round(value), 25, 400);
+    this.zoom = clamp(Math.round(value), 5, 400);
     const range = document.getElementById('zoomRange');
     const output = document.getElementById('zoomValue');
     if (range) {
-      range.min = '25';
+      range.min = '5';
       range.max = '400';
       range.value = String(this.zoom);
     }
     if (output) output.textContent = this.zoomMode === 'fit' ? `Fit ${this.zoom}%` : `${this.zoom}%`;
     this.renderer.setZoom(this.zoom);
-    this.updateLightMarkers();
-    this.updateStatus(this.previewPoint);
+    this.scheduleLightMarkerUpdate();
+    this.scheduleZoomStatusUpdate();
   }
 
-  zoomAtClientPoint(clientX, clientY, nextZoom) {
+  zoomAtClientPoint(clientX, clientY, nextZoom, options = {}) {
+    if (options.animate) {
+      this.animateZoomAtClientPoint(clientX, clientY, nextZoom);
+      return;
+    }
     const wrap = document.getElementById('canvasWrap');
     const before = this.canvas.getBoundingClientRect();
     const localX = clientX - before.left;
     const localY = clientY - before.top;
-    const ratioX = before.width ? localX / before.width : 0.5;
-    const ratioY = before.height ? localY / before.height : 0.5;
-    const clampedZoom = clamp(nextZoom, 25, 400);
+    const previousZoom = this.zoom;
+    const clampedZoom = clamp(Math.round(nextZoom), 5, 400);
     if (clampedZoom === this.zoom) return;
 
-    this.setZoom(clampedZoom);
+    this.applyZoomValue(clampedZoom);
 
-    const after = this.canvas.getBoundingClientRect();
-    const anchoredX = after.left + after.width * ratioX;
-    const anchoredY = after.top + after.height * ratioY;
-    wrap.scrollLeft += anchoredX - clientX;
-    wrap.scrollTop += anchoredY - clientY;
+    const scaleRatio = clampedZoom / previousZoom;
+    wrap.scrollLeft += localX * (scaleRatio - 1);
+    wrap.scrollTop += localY * (scaleRatio - 1);
+  }
+
+  animateZoomAtClientPoint(clientX, clientY, nextZoom) {
+    const from = this.zoom;
+    const to = clamp(nextZoom, 5, 400);
+    if (from === to) return;
+    if (this.zoomAnimation) cancelAnimationFrame(this.zoomAnimation);
+    const started = performance.now();
+    const duration = 140;
+    const ease = (t) => 1 - Math.pow(1 - t, 3);
+    const step = (now) => {
+      const progress = clamp((now - started) / duration, 0, 1);
+      const value = from + (to - from) * ease(progress);
+      this.zoomAtClientPoint(clientX, clientY, value, { animate: false });
+      if (progress < 1) {
+        this.zoomAnimation = requestAnimationFrame(step);
+      } else {
+        this.zoomAnimation = null;
+      }
+    };
+    this.zoomAnimation = requestAnimationFrame(step);
   }
 
   fitZoomToView() {
@@ -2866,7 +3283,7 @@ class App {
     const availableWidth = Math.max(120, wrap.clientWidth - 72);
     const availableHeight = Math.max(120, wrap.clientHeight - 72);
     const fit = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
-    const percent = clamp(Math.floor((fit * 100) / 5) * 5, 25, 400);
+    const percent = clamp(Math.floor((fit * 100) / 5) * 5, 5, 400);
     this.applyZoomValue(percent);
   }
 
@@ -2874,9 +3291,32 @@ class App {
     if (!event.ctrlKey && !event.metaKey && !event.altKey) return;
     event.preventDefault();
 
-    const direction = event.deltaY < 0 ? 1 : -1;
-    const step = Math.abs(event.deltaY) > 80 ? 20 : 10;
-    this.zoomAtClientPoint(event.clientX, event.clientY, this.zoom + direction * step);
+    this.zoomMode = 'manual';
+    if (this.zoomAnimation) {
+      cancelAnimationFrame(this.zoomAnimation);
+      this.zoomAnimation = null;
+    }
+    const normalizedDelta = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? event.deltaY * 16 : event.deltaY;
+    this.zoomWheelRemainder += -normalizedDelta;
+    const step = Math.max(-24, Math.min(24, this.zoomWheelRemainder * 0.12));
+    this.zoomWheelRemainder *= 0.2;
+    this.zoomAtClientPoint(event.clientX, event.clientY, this.zoom + step, { animate: false });
+  }
+
+  scheduleZoomStatusUpdate() {
+    if (this.zoomStatusFrame) return;
+    this.zoomStatusFrame = requestAnimationFrame(() => {
+      this.zoomStatusFrame = null;
+      this.updateStatus(this.previewPoint);
+    });
+  }
+
+  scheduleLightMarkerUpdate() {
+    if (this.lightMarkerFrame) return;
+    this.lightMarkerFrame = requestAnimationFrame(() => {
+      this.lightMarkerFrame = null;
+      this.updateLightMarkers();
+    });
   }
 
   bindLightingPanel() {
@@ -3688,6 +4128,73 @@ class App {
     bar.style.width = `${percent}%`;
   }
 
+  imagePixelAt(pixels, width, x, y) {
+    const offset = (y * width + x) * 4;
+    return {
+      r: pixels[offset],
+      g: pixels[offset + 1],
+      b: pixels[offset + 2],
+      a: pixels[offset + 3],
+    };
+  }
+
+  colorDistance(a, b) {
+    return Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
+  }
+
+  detectFlatImageBackground(pixels, width, height) {
+    if (!width || !height) return null;
+    const samples = [
+      this.imagePixelAt(pixels, width, 0, 0),
+      this.imagePixelAt(pixels, width, width - 1, 0),
+      this.imagePixelAt(pixels, width, 0, height - 1),
+      this.imagePixelAt(pixels, width, width - 1, height - 1),
+    ].filter((sample) => sample.a > 245);
+    if (samples.length < 3) return null;
+    const avg = samples.reduce((acc, sample) => ({
+      r: acc.r + sample.r / samples.length,
+      g: acc.g + sample.g / samples.length,
+      b: acc.b + sample.b / samples.length,
+    }), { r: 0, g: 0, b: 0 });
+    const maxDistance = Math.max(...samples.map((sample) => this.colorDistance(sample, avg)));
+    if (maxDistance > 18) return null;
+    return avg;
+  }
+
+  buildImageBackgroundMask(pixels, width, height, color, tolerance = 30) {
+    if (!color) return null;
+    const mask = new Uint8Array(width * height);
+    const queue = [];
+    const enqueue = (x, y) => {
+      if (x < 0 || y < 0 || x >= width || y >= height) return;
+      const index = y * width + x;
+      if (mask[index]) return;
+      const sample = this.imagePixelAt(pixels, width, x, y);
+      if (sample.a <= 8 || this.colorDistance(sample, color) <= tolerance) {
+        mask[index] = 1;
+        queue.push(index);
+      }
+    };
+    for (let x = 0; x < width; x += 1) {
+      enqueue(x, 0);
+      enqueue(x, height - 1);
+    }
+    for (let y = 1; y < height - 1; y += 1) {
+      enqueue(0, y);
+      enqueue(width - 1, y);
+    }
+    for (let head = 0; head < queue.length; head += 1) {
+      const index = queue[head];
+      const x = index % width;
+      const y = Math.floor(index / width);
+      enqueue(x + 1, y);
+      enqueue(x - 1, y);
+      enqueue(x, y + 1);
+      enqueue(x, y - 1);
+    }
+    return mask;
+  }
+
   async applyPendingImageImport() {
     if (!this.pendingImageImport || this.imageImportBusy) return;
     this.setImageImportBusy(true);
@@ -3755,6 +4262,8 @@ class App {
     }
     ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
     const pixels = ctx.getImageData(0, 0, targetWidth, targetHeight).data;
+    const flatBackground = transparent ? this.detectFlatImageBackground(pixels, targetWidth, targetHeight) : null;
+    const backgroundMask = flatBackground ? this.buildImageBackgroundMask(pixels, targetWidth, targetHeight, flatBackground) : null;
     const bayer = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
     for (let y = 0; y < targetHeight; y += 1) {
       for (let x = 0; x < targetWidth; x += 1) {
@@ -3764,6 +4273,7 @@ class App {
         const r = pixels[offset];
         const g = pixels[offset + 1];
         const b = pixels[offset + 2];
+        if (backgroundMask?.[y * targetWidth + x]) continue;
         let luminance = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
         if (dither) luminance = clamp(luminance + (bayer[y % 4][x % 4] / 15 - 0.5) * 0.16, 0, 1);
         const density = 1 - luminance;
@@ -3794,6 +4304,7 @@ class App {
     this.setImageImportProgress(94, 'Обновление холста...');
     await this.nextFrame();
     this.syncGridRefs();
+    if (resizeCanvas) this.setZoom('fit');
     this.render();
     this.setImageImportProgress(100, 'Готово');
     this.imageImportBusy = false;
@@ -3841,6 +4352,8 @@ class App {
         id: document.id,
         name: document.name,
         snapshot: document.snapshot,
+        undoStack: this.serializeHistoryStack(document.undoStack),
+        redoStack: this.serializeHistoryStack(document.redoStack),
       })),
       layers: this.layers.map((layer) => ({
         id: layer.id,
@@ -3886,19 +4399,69 @@ class App {
     if (status) status.textContent = 'Проект сохранен в файл';
   }
 
+  showProjectLoading(fileName) {
+    const dialog = document.getElementById('projectLoadingDialog');
+    if (!dialog) return;
+    document.getElementById('projectLoadingName').textContent = fileName || 'project.rigel.json';
+    this.updateProjectLoading({ progress: 0, stage: 'Reading project...', fileName });
+    dialog.style.display = '';
+    if (!dialog.open) dialog.showModal();
+  }
+
+  updateProjectLoading({ progress = 0, stage = 'Reading project...', fileName = '' } = {}) {
+    const name = document.getElementById('projectLoadingName');
+    const stageElement = document.getElementById('projectLoadingStage');
+    const percent = document.getElementById('projectLoadingPercent');
+    const bar = document.getElementById('projectLoadingBar');
+    const value = clamp(Math.round(progress), 0, 100);
+    if (name && fileName) name.textContent = fileName;
+    if (stageElement) stageElement.textContent = stage;
+    if (percent) percent.textContent = `${value}%`;
+    if (bar) bar.style.width = `${value}%`;
+  }
+
+  hideProjectLoading() {
+    const dialog = document.getElementById('projectLoadingDialog');
+    if (!dialog) return;
+    try {
+      if (dialog.open) dialog.close();
+    } catch (error) {
+      console.warn('Project loading dialog close failed', error);
+    }
+    dialog.removeAttribute('open');
+    dialog.style.display = 'none';
+  }
+
+  cancelProjectLoad() {
+    this.projectLoader.cancel();
+    this.hideProjectLoading();
+    const status = document.getElementById('statusBar');
+    if (status) status.textContent = 'Открытие проекта отменено';
+  }
+
   async loadProjectFile(file) {
     if (!file) return;
+    this.showProjectLoading(file.name);
     try {
-      const data = JSON.parse(await file.text());
+      const data = await this.projectLoader.loadFile(file, {
+        onProgress: (payload) => this.updateProjectLoading(payload),
+      });
+      this.updateProjectLoading({ progress: 98, stage: 'Finalizing...', fileName: file.name });
+      await this.nextFrame();
       this.history.capture();
       this.applyProjectData(data);
+      this.hideStartScreen();
       this.persistLocalProject();
+      this.updateProjectLoading({ progress: 100, stage: 'Finalizing...', fileName: file.name });
       document.querySelector('.document-name').textContent = file.name;
       document.getElementById('statusBar').textContent = 'Проект загружен';
     } catch (error) {
-      document.getElementById('statusBar').textContent = 'Не удалось загрузить проект';
-      console.error(error);
+      if (error?.name !== 'AbortError') {
+        document.getElementById('statusBar').textContent = 'Не удалось загрузить проект';
+        console.error(error);
+      }
     } finally {
+      this.hideProjectLoading();
       document.getElementById('projectInput').value = '';
     }
   }
@@ -3913,13 +4476,15 @@ class App {
         id: document.id,
         name: document.name,
         snapshot: document.snapshot,
-        undoStack: [],
-        redoStack: [],
+        undoStack: this.deserializeHistoryStack(document.undoStack),
+        redoStack: this.deserializeHistoryStack(document.redoStack),
       }));
       this.activeDocumentId = data.activeDocumentId || this.documents[0].id;
       const active = this.documents.find((document) => document.id === this.activeDocumentId) || this.documents[0];
       this.activeDocumentId = active.id;
       this.loadDocumentSnapshot(active.snapshot);
+      this.history.undoStack = active.undoStack || [];
+      this.history.redoStack = active.redoStack || [];
     } else if (Array.isArray(data.layers) && data.layers.length) {
       this.layers = data.layers.map((layer, index) => ({
         id: layer.id || `${Date.now()}-${index}`,

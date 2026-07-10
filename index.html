@@ -169,11 +169,27 @@
             <button data-menu-action="effect-shadow" type="button">Тень <kbd>⌥-</kbd></button>
             <button data-menu-action="effect-3d-render" type="button">3D render / объем <kbd>⌥R</kbd></button>
             <button data-menu-action="effect-emboss" type="button">Рельеф <kbd>⌥E</kbd></button>
+            <button data-menu-action="remove-flat-background" type="button">Удалить однотонный фон слоя</button>
             <div class="menu-separator"></div>
             <button data-menu-action="effect-mirror-x" type="button">Отразить по горизонтали <kbd>⌥H</kbd></button>
             <button data-menu-action="effect-mirror-y" type="button">Отразить по вертикали <kbd>⌥V</kbd></button>
             <div class="menu-separator"></div>
             <button data-menu-action="texture" type="button">Шумовая текстура <kbd>⌥T</kbd></button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="plugin-run:rigel.layer.outline" type="button">Plugin: Outline</button>
+            <button data-menu-action="plugin-run:rigel.layer.blur" type="button">Plugin: Blur</button>
+            <button data-menu-action="plugin-run:rigel.layer.bloom" type="button">Plugin: Bloom</button>
+            <button data-menu-action="plugin-run:rigel.layer.drop-shadow" type="button">Plugin: Drop Shadow</button>
+            <button data-menu-action="plugin-run:rigel.layer.noise" type="button">Plugin: Noise</button>
+            <button data-menu-action="plugin-run:rigel.layer.color-correction" type="button">Plugin: Color Correction</button>
+            <button data-menu-action="plugin-run:rigel.layer.lut-warm" type="button">Plugin: LUT Warm</button>
+            <button data-menu-action="plugin-run:rigel.layer.motion-blur" type="button">Plugin: Motion Blur</button>
+            <button data-menu-action="plugin-run:rigel.layer.dof" type="button">Plugin: DOF</button>
+            <button data-menu-action="plugin-run:rigel.layer.scanlines" type="button">Plugin: CRT Scanlines</button>
+            <button data-menu-action="plugin-run:rigel.layer.sharpen" type="button">Plugin: Sharpen</button>
+            <div class="menu-separator"></div>
+            <button data-menu-action="plugins" type="button">Плагины...</button>
+            <button data-menu-action="plugin-load" type="button">Загрузить свой plugin...</button>
           </div>
         </div>
         <div class="menu-root">
@@ -386,7 +402,7 @@
         <div id="statusBar" class="status-message">Готово · Карандаш · 80x25 · 100%</div>
         <div class="zoom-control">
           <button id="zoomOutBtn" type="button" aria-label="Уменьшить">−</button>
-          <input id="zoomRange" type="range" min="25" max="400" step="5" value="100" />
+          <input id="zoomRange" type="range" min="5" max="400" step="5" value="100" />
           <button id="zoomFitBtn" type="button" aria-label="По размеру">Fit</button>
           <button id="zoomInBtn" type="button" aria-label="Увеличить">+</button>
           <output id="zoomValue">100%</output>
@@ -397,6 +413,63 @@
     <input id="projectInput" class="hidden-input" type="file" accept=".json,.rigel" />
     <input id="importInput" class="hidden-input" type="file" accept=".txt,.ans,.json" />
     <input id="imageInput" class="hidden-input" type="file" accept="image/*" />
+    <input id="pluginInput" class="hidden-input" type="file" accept=".js,.mjs,text/javascript,application/javascript" />
+
+    <dialog id="projectLoadingDialog" class="classic-dialog project-loading-dialog">
+      <div class="dialog-title">Открытие проекта</div>
+      <div class="project-loading-body">
+        <div class="project-loader-mark" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <div class="project-loading-copy">
+          <strong id="projectLoadingName">project.rigel.json</strong>
+          <span id="projectLoadingStage">Reading project...</span>
+        </div>
+        <div class="project-loading-progress">
+          <div class="project-loading-track"><span id="projectLoadingBar"></span></div>
+          <output id="projectLoadingPercent">0%</output>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button id="cancelProjectLoadBtn" type="button">Отмена</button>
+      </div>
+    </dialog>
+
+    <dialog id="commandPaletteDialog" class="classic-dialog command-palette-dialog">
+      <div class="command-palette-search">
+        <input id="commandPaletteInput" type="search" placeholder="Команда или инструмент..." autocomplete="off" />
+      </div>
+      <div id="commandPaletteList" class="command-palette-list" role="listbox"></div>
+    </dialog>
+
+    <dialog id="pluginManagerDialog" class="classic-dialog plugin-manager-dialog">
+      <div class="dialog-title">Плагины</div>
+      <div class="dialog-body plugin-manager-body">
+        <div class="plugin-manager-toolbar">
+          <button id="loadPluginBtn" type="button">Загрузить .js</button>
+          <button id="reloadCustomPluginsBtn" type="button">Перезагрузить свои</button>
+        </div>
+        <div id="pluginList" class="plugin-list"></div>
+        <details class="plugin-help">
+          <summary>Формат своего plugin</summary>
+          <pre><code>export default {
+  type: 'layer-effect',
+  manifest: {
+    id: 'my.effect',
+    name: 'My Effect',
+    version: '1.0.0',
+    sandbox: 'pure-grid-transform'
+  },
+  apply(grid, { ANSIGrid, mixColors }) {
+    const out = grid.clone();
+    // out.setCell(x, y, { bg: '#ff00ff' })
+    return out;
+  }
+}</code></pre>
+        </details>
+      </div>
+      <div class="dialog-actions"><button data-dialog-close type="button">OK</button></div>
+    </dialog>
 
     <section id="lightingPanel" class="floating-panel" data-panel-id="lighting" hidden>
       <header id="lightingPanelHeader" class="floating-panel-header">
