@@ -901,7 +901,13 @@ class App {
     clearTimeout(this.autosaveTimer);
     try {
       const project = this.serializeProject();
-      localStorage.setItem('rigel-project', JSON.stringify(project));
+      try {
+        localStorage.setItem('rigel-project', JSON.stringify(project));
+      } catch (storageError) {
+        localStorage.removeItem('rigel-project');
+        this.saveProjectRecord(project).catch((error) => console.warn('Project database fallback failed', error));
+        console.warn('Local project cache was too large; IndexedDB fallback is used', storageError);
+      }
       this.updateRecentProjects(project);
     } catch (error) {
       console.error('Autosave failed', error);
@@ -1874,13 +1880,19 @@ class App {
         this.scheduleAutosave();
       }
     });
-    document.getElementById('recentProjects')?.addEventListener('click', (event) => {
+    document.getElementById('recentProjects')?.addEventListener('click', async (event) => {
       const card = event.target.closest('.recent-project');
       if (!card) return;
       const recent = this.readRecentProjects().find((item) => item.id === card.dataset.id);
       if (recent) {
-        this.applyProjectData(recent.data);
-        this.hideStartScreen();
+        const data = recent.data || await this.loadProjectRecord(recent.id);
+        if (data) {
+          this.applyProjectData(data);
+          this.hideStartScreen();
+        } else {
+          const status = document.getElementById('statusBar');
+          if (status) status.textContent = 'Полные данные проекта не найдены';
+        }
       }
     });
     this.bindIfExists('confirmCloseTabBtn', 'click', () => {
@@ -2134,23 +2146,96 @@ class App {
 
   readRecentProjects() {
     try {
-      return JSON.parse(localStorage.getItem('rigel-recent-projects') || '[]');
+      const recent = JSON.parse(localStorage.getItem('rigel-recent-projects') || '[]');
+      return Array.isArray(recent) ? recent : [];
     } catch {
       return [];
     }
   }
 
   updateRecentProjects(project) {
-    const recent = this.readRecentProjects().filter((item) => item.id !== this.projectId);
-    recent.unshift({
+    this.saveProjectRecord(project).catch((error) => console.warn('Project database save failed', error));
+    const previousRecent = this.readRecentProjects();
+    previousRecent.forEach((item) => {
+      if (item.data?.id) this.saveProjectRecord(item.data).catch(() => {});
+    });
+    const recent = previousRecent
+      .filter((item) => item.id !== this.projectId)
+      .map((item) => this.compactRecentProject(item));
+    recent.unshift(this.compactRecentProject({
       id: this.projectId,
       name: this.projectName,
       width: this.grid.width,
       height: this.grid.height,
       modified: new Date().toISOString(),
       data: project,
+    }));
+
+    const compact = recent.slice(0, 8);
+    try {
+      localStorage.removeItem('rigel-recent-projects');
+      localStorage.setItem('rigel-recent-projects', JSON.stringify(compact));
+    } catch (error) {
+      const minimal = compact.map(({ previewImage, ...item }) => item);
+      localStorage.removeItem('rigel-recent-projects');
+      try {
+        localStorage.setItem('rigel-recent-projects', JSON.stringify(minimal.slice(0, 4)));
+      } catch {
+        localStorage.removeItem('rigel-recent-projects');
+      }
+      console.warn('Recent projects were saved without previews', error);
+    }
+  }
+
+  compactRecentProject(item) {
+    return {
+      id: item.id,
+      name: item.name || item.data?.name || 'Новый проект',
+      width: item.width || item.data?.layers?.[0]?.grid?.width || item.data?.grid?.width || this.grid.width,
+      height: item.height || item.data?.layers?.[0]?.grid?.height || item.data?.grid?.height || this.grid.height,
+      modified: item.modified || new Date().toISOString(),
+      previewImage: item.previewImage || (item.data ? this.createRecentPreviewImage(item.data) : null),
+    };
+  }
+
+  openProjectDatabase() {
+    if (!('indexedDB' in window)) return Promise.resolve(null);
+    if (this.projectDatabasePromise) return this.projectDatabasePromise;
+    this.projectDatabasePromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open('rigel-project-store', 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore('projects', { keyPath: 'id' });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
     });
-    localStorage.setItem('rigel-recent-projects', JSON.stringify(recent.slice(0, 8)));
+    return this.projectDatabasePromise;
+  }
+
+  async saveProjectRecord(project) {
+    const db = await this.openProjectDatabase();
+    if (!db || !project?.id) return;
+    await new Promise((resolve, reject) => {
+      const transaction = db.transaction('projects', 'readwrite');
+      transaction.objectStore('projects').put({
+        id: project.id,
+        modified: new Date().toISOString(),
+        data: project,
+      });
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+    });
+  }
+
+  async loadProjectRecord(id) {
+    const db = await this.openProjectDatabase();
+    if (!db || !id) return null;
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction('projects', 'readonly');
+      const request = transaction.objectStore('projects').get(id);
+      request.onsuccess = () => resolve(request.result?.data || null);
+      request.onerror = () => reject(request.error);
+    });
   }
 
   renderRecentProjects() {
@@ -2171,7 +2256,7 @@ class App {
       card.querySelector('strong').textContent = project.name;
       card.querySelector('small').textContent = `${project.width} × ${project.height}`;
       card.querySelector('time').textContent = date;
-      this.renderRecentProjectThumbnail(card.querySelector('.recent-thumb'), project.data);
+      this.renderRecentProjectThumbnail(card.querySelector('.recent-thumb'), project.data || project);
       container.appendChild(card);
     });
   }
@@ -2218,6 +2303,14 @@ class App {
       .sort((a, b) => b.score - a.score)[0]?.snapshot || null;
   }
 
+  createRecentPreviewImage(projectData) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 68;
+    canvas.height = 48;
+    this.renderRecentProjectThumbnail(canvas, projectData);
+    return canvas.toDataURL('image/png');
+  }
+
   renderRecentProjectThumbnail(canvas, projectData) {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -2228,6 +2321,15 @@ class App {
         ctx.fillStyle = ((x / tile + y / tile) & 1) ? '#20252a' : '#111519';
         ctx.fillRect(x, y, tile, tile);
       }
+    }
+
+    if (projectData?.previewImage) {
+      const image = new Image();
+      image.onload = () => {
+        ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      };
+      image.src = projectData.previewImage;
+      return;
     }
 
     const snapshot = this.getRecentPreviewSnapshot(projectData);
@@ -3719,6 +3821,15 @@ window.addEventListener('DOMContentLoaded', () => {
       } catch (error) {
         console.error('Saved project restore failed', error);
         localStorage.removeItem('rigel-project');
+      }
+    } else {
+      const latest = app.readRecentProjects()[0];
+      if (latest?.id) {
+        app.loadProjectRecord(latest.id)
+          .then((data) => {
+            if (data) app.applyProjectData(data);
+          })
+          .catch((error) => console.warn('IndexedDB project restore failed', error));
       }
     }
 
