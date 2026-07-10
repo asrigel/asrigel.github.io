@@ -243,6 +243,21 @@
           <input id="magicContiguous" type="checkbox" checked />
           Смежные области
         </label>
+        <label id="fillModeOption" class="fill-option" hidden>Заливка
+          <select id="fillMode">
+            <option value="all">Знак + фон</option>
+            <option value="background">Только фон</option>
+            <option value="character">Только знак</option>
+          </select>
+        </label>
+        <label id="fillContiguousOption" class="check-row fill-option" hidden>
+          <input id="fillContiguous" type="checkbox" />
+          Смежно
+        </label>
+        <label id="fillClearCharactersOption" class="check-row fill-option" hidden>
+          <input id="fillClearCharacters" type="checkbox" checked />
+          Очистить знак
+        </label>
       </section>
 
       <section id="startScreen" class="start-screen" hidden>
@@ -420,8 +435,8 @@
     <dialog id="canvasSizeDialog" class="classic-dialog">
       <div class="dialog-title">Размер холста</div>
       <div class="dialog-body size-fields">
-        <label>Ширина <input id="canvasWidthInput" type="number" min="8" max="240" value="80" /></label>
-        <label>Высота <input id="canvasHeightInput" type="number" min="4" max="120" value="25" /></label>
+        <label>Ширина <input id="canvasWidthInput" type="number" min="8" value="80" /></label>
+        <label>Высота <input id="canvasHeightInput" type="number" min="4" value="25" /></label>
       </div>
       <div class="dialog-actions">
         <button data-dialog-close type="button">Отмена</button>
@@ -446,8 +461,8 @@
       <div class="dialog-body project-fields">
         <label>Название <input id="newTabName" type="text" value="Вкладка" maxlength="60" /></label>
         <div class="project-size-row">
-          <label>Ширина <input id="newTabWidth" type="number" min="8" max="240" value="80" /></label>
-          <label>Высота <input id="newTabHeight" type="number" min="4" max="120" value="25" /></label>
+          <label>Ширина <input id="newTabWidth" type="number" min="8" value="80" /></label>
+          <label>Высота <input id="newTabHeight" type="number" min="4" value="25" /></label>
         </div>
         <label class="check-row remember-tab-size">
           <input id="rememberTabSize" type="checkbox" />
@@ -468,8 +483,8 @@
         </div>
         <div class="image-import-fields">
           <div class="project-size-row">
-            <label>Ширина <input id="imageImportWidth" type="number" min="8" max="240" value="80" /></label>
-            <label>Высота <input id="imageImportHeight" type="number" min="4" max="120" value="25" /></label>
+            <label>Ширина <input id="imageImportWidth" type="number" min="8" value="80" /></label>
+            <label>Высота <input id="imageImportHeight" type="number" min="4" value="25" /></label>
           </div>
           <label>Вписывание
             <select id="imageImportFit">
@@ -492,11 +507,15 @@
             </select>
           </label>
           <label class="check-row"><input id="imageImportDither" type="checkbox" checked /> Дизеринг</label>
-          <label class="check-row"><input id="imageImportTransparent" type="checkbox" checked /> Прозрачный фон</label>
+          <label class="check-row"><input id="imageImportTransparent" type="checkbox" checked /> Прозрачные пиксели</label>
           <label class="check-row"><input id="imageImportResizeCanvas" type="checkbox" /> Изменить размер холста</label>
         </div>
       </div>
       <div class="dialog-actions">
+        <div id="imageImportProgress" class="image-import-progress" hidden>
+          <span id="imageImportProgressText">Рендер 0%</span>
+          <div class="image-import-progress-track"><span id="imageImportProgressBar"></span></div>
+        </div>
         <button data-dialog-close type="button">Отмена</button>
         <button id="applyImageImportBtn" type="button">Импортировать</button>
       </div>
@@ -517,8 +536,8 @@
           </select>
         </label>
         <div class="project-size-row">
-          <label>Ширина <input id="newProjectWidth" type="number" min="8" max="240" value="120" /></label>
-          <label>Высота <input id="newProjectHeight" type="number" min="4" max="120" value="40" /></label>
+          <label>Ширина <input id="newProjectWidth" type="number" min="8" value="120" /></label>
+          <label>Высота <input id="newProjectHeight" type="number" min="4" value="40" /></label>
         </div>
         <fieldset class="orientation-control">
           <legend>Ориентация</legend>

@@ -640,6 +640,10 @@ input[type="color"] {
   overflow: hidden;
 }
 
+dialog:not([open]) {
+  display: none !important;
+}
+
 .image-import-layout {
   display: grid;
   grid-template-columns: 1fr;
@@ -696,6 +700,43 @@ input[type="color"] {
 
 .image-import-fields .check-row {
   min-height: 24px;
+}
+
+.image-import-dialog .dialog-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.image-import-progress {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 112px minmax(120px, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+.image-import-progress[hidden] {
+  display: none;
+}
+
+.image-import-progress-track {
+  height: 14px;
+  overflow: hidden;
+  border: 1px solid;
+  border-color: #101418 #7f8790 #7f8790 #101418;
+  background: #1b2026;
+  box-shadow: inset 1px 1px 0 #07090b;
+}
+
+.image-import-progress-track span {
+  width: 0%;
+  height: 100%;
+  display: block;
+  background: linear-gradient(90deg, #365f87, #6a94ba);
+  transition: width 80ms linear;
 }
 
 .image-import-fields .project-size-row input,
@@ -1922,5 +1963,14 @@ body.light-theme .layer-settings label {
     bottom: 0;
     padding-top: 8px;
     background: #262d35;
+  }
+
+  .image-import-dialog .dialog-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .image-import-progress {
+    grid-column: 1 / -1;
+    grid-template-columns: 88px minmax(0, 1fr);
   }
 }

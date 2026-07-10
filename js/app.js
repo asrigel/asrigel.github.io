@@ -5,6 +5,11 @@ import { AnsiExporter } from './exporter.js';
 import { History } from './history.js';
 import { clamp, hexToRgb, mixColors, rgbToHex } from './utils.js';
 
+const CANVAS_MIN_WIDTH = 8;
+const CANVAS_MIN_HEIGHT = 4;
+const CANVAS_MAX_WIDTH = Number.POSITIVE_INFINITY;
+const CANVAS_MAX_HEIGHT = Number.POSITIVE_INFINITY;
+
 class App {
   constructor() {
     this.canvas = document.getElementById('editorCanvas');
@@ -41,6 +46,9 @@ class App {
     this.brushLevel = 0.7;
     this.brushSize = 1;
     this.brushSmoothing = true;
+    this.fillMode = 'all';
+    this.fillContiguous = false;
+    this.fillClearCharacters = true;
     this.symbol = '█';
     this.textValue = '';
     this.fgColor = '#f8fafc';
@@ -68,6 +76,7 @@ class App {
     this.pendingTextPoint = null;
     this.pendingCloseDocumentId = null;
     this.pendingImageImport = null;
+    this.imageImportBusy = false;
     this.tabDefaults = this.readTabDefaults();
     this.placingLight = false;
     this.selectedLightId = null;
@@ -150,6 +159,19 @@ class App {
       this.brushSmoothing = event.target.checked;
       this.scheduleAutosave();
     });
+    this.bindIfExists('fillMode', 'change', (event) => {
+      this.fillMode = ['all', 'background', 'character'].includes(event.target.value) ? event.target.value : 'all';
+      this.updateBrushOptionVisibility();
+      this.scheduleAutosave();
+    });
+    this.bindIfExists('fillContiguous', 'change', (event) => {
+      this.fillContiguous = event.target.checked;
+      this.scheduleAutosave();
+    });
+    this.bindIfExists('fillClearCharacters', 'change', (event) => {
+      this.fillClearCharacters = event.target.checked;
+      this.scheduleAutosave();
+    });
     this.bindIfExists('magicTolerance', 'input', (event) => {
       this.magicTolerance = Number(event.target.value);
       const output = document.getElementById('magicToleranceValue');
@@ -210,8 +232,22 @@ class App {
     this.bindIfExists('importInput', 'change', (event) => this.importFile(event.target.files?.[0]));
     this.bindIfExists('projectInput', 'change', (event) => this.loadProjectFile(event.target.files?.[0]));
     this.bindIfExists('imageInput', 'change', (event) => this.importImage(event.target.files?.[0]));
-    this.bindIfExists('applyImageImportBtn', 'click', () => this.applyPendingImageImport());
+    this.bindIfExists('imageImportWidth', 'change', () => this.clampImageImportFields());
+    this.bindIfExists('imageImportHeight', 'change', () => this.clampImageImportFields());
+    this.bindIfExists('applyImageImportBtn', 'click', () => {
+      this.applyPendingImageImport().catch((error) => {
+        console.error('Image import failed', error);
+        this.setImageImportBusy(false);
+        this.setImageImportProgress(0, 'Ошибка импорта', true);
+        const status = document.getElementById('statusBar');
+        if (status) status.textContent = 'Импорт изображения не удался';
+      });
+    });
+    document.getElementById('imageImportDialog')?.addEventListener('cancel', (event) => {
+      if (this.imageImportBusy) event.preventDefault();
+    });
     document.getElementById('imageImportDialog')?.addEventListener('close', () => {
+      if (this.imageImportBusy) return;
       if (this.pendingImageImport) this.clearPendingImageImport();
     });
     this.bindIfExists('zoomRange', 'input', (event) => this.setZoom(Number(event.target.value)));
@@ -306,6 +342,11 @@ class App {
     });
     const magicContiguousOption = document.getElementById('magicContiguousOption');
     if (magicContiguousOption) magicContiguousOption.hidden = !magicTool || this.currentTool === 'magic-pencil';
+    document.querySelectorAll('.fill-option').forEach((option) => {
+      option.hidden = this.currentTool !== 'fill';
+    });
+    const fillClearCharactersOption = document.getElementById('fillClearCharactersOption');
+    if (fillClearCharactersOption) fillClearCharactersOption.hidden = this.currentTool !== 'fill' || this.fillMode !== 'background';
     this.updateBrushLevelPreview();
   }
 
@@ -1786,12 +1827,70 @@ class App {
     if (!this.canPaintCell(x, y)) return;
     const target = this.grid.getCell(x, y);
     if (!target) return;
-    const fillChar = this.paintBackground ? ' ' : this.symbol;
-    const targetKey = `${target.empty}|${target.char}|${target.fg}|${target.bg}|${target.fgAlpha}|${target.bgAlpha}`;
-    const nextFgAlpha = this.paintBackground || this.fgTransparent ? 0 : 1;
-    const nextBgAlpha = this.bgTransparent ? 0 : 1;
-    const fillKey = `${nextFgAlpha <= 0 && nextBgAlpha <= 0}|${fillChar}|${this.fgColor}|${this.bgColor}|${nextFgAlpha}|${nextBgAlpha}`;
-    if (targetKey === fillKey) return;
+    const mode = this.fillMode || 'all';
+    const signature = (cell) => {
+      if (!cell) return 'missing';
+      if (mode === 'background') return `${cell.empty}|${cell.bg}|${cell.bgAlpha ?? 0}`;
+      if (mode === 'character') return `${cell.empty}|${cell.char}|${cell.fg}|${cell.fgAlpha ?? 0}`;
+      return `${cell.empty}|${cell.char}|${cell.fg}|${cell.bg}|${cell.fgAlpha}|${cell.bgAlpha}`;
+    };
+    const targetKey = signature(target);
+    const fillChar = this.paintBackground || mode === 'background' ? ' ' : this.symbol;
+    const nextFgAlpha = mode === 'background' || this.paintBackground || this.fgTransparent ? 0 : 1;
+    const nextBgAlpha = mode === 'character' || this.bgTransparent ? 0 : 1;
+    const basePatch = {
+      density: 1,
+      brightness: 1,
+    };
+    if (mode !== 'background') {
+      basePatch.fg = this.fgColor;
+      basePatch.char = fillChar;
+      basePatch.fgAlpha = nextFgAlpha;
+    }
+    if (mode !== 'character') {
+      basePatch.bg = this.bgColor;
+      basePatch.bgAlpha = nextBgAlpha;
+    }
+    const buildPatch = (cell) => {
+      const patch = { ...basePatch };
+      if (mode === 'background') {
+        if (this.fillClearCharacters) {
+          patch.char = ' ';
+          patch.fg = cell.fg;
+          patch.fgAlpha = 0;
+          patch.density = 0;
+        } else {
+          patch.char = cell.char;
+          patch.fg = cell.fg;
+          patch.fgAlpha = cell.fgAlpha ?? 0;
+        }
+      }
+      if (mode === 'character') {
+        patch.bg = cell.bg;
+        patch.bgAlpha = cell.bgAlpha ?? 0;
+      }
+      patch.empty = ((patch.fgAlpha ?? 0) <= 0 && (patch.bgAlpha ?? 0) <= 0);
+      return patch;
+    };
+    const previewCell = { ...target, ...buildPatch(target) };
+    if (targetKey === signature(previewCell)) return;
+
+    const paintCell = (cx, cy) => {
+      if (!this.canPaintCell(cx, cy)) return false;
+      const cell = this.grid.getCell(cx, cy);
+      if (!cell || signature(cell) !== targetKey) return false;
+      this.grid.setCell(cx, cy, buildPatch(cell));
+      return true;
+    };
+
+    if (!this.fillContiguous) {
+      for (let cy = 0; cy < this.grid.height; cy += 1) {
+        for (let cx = 0; cx < this.grid.width; cx += 1) {
+          paintCell(cx, cy);
+        }
+      }
+      return;
+    }
 
     const seen = new Set();
     const stack = [[x, y]];
@@ -1800,19 +1899,7 @@ class App {
       const key = `${cx},${cy}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      if (!this.canPaintCell(cx, cy)) continue;
-      const cell = this.grid.getCell(cx, cy);
-      if (!cell || `${cell.empty}|${cell.char}|${cell.fg}|${cell.bg}|${cell.fgAlpha}|${cell.bgAlpha}` !== targetKey) continue;
-      this.grid.setCell(cx, cy, {
-        fg: this.fgColor,
-        bg: this.bgColor,
-        char: fillChar,
-        density: 1,
-        brightness: 1,
-        fgAlpha: nextFgAlpha,
-        bgAlpha: nextBgAlpha,
-        empty: nextFgAlpha <= 0 && nextBgAlpha <= 0,
-      });
+      if (!paintCell(cx, cy)) continue;
       if (this.grid.getCell(cx + 1, cy)) stack.push([cx + 1, cy]);
       if (this.grid.getCell(cx - 1, cy)) stack.push([cx - 1, cy]);
       if (this.grid.getCell(cx, cy + 1)) stack.push([cx, cy + 1]);
@@ -1905,8 +1992,8 @@ class App {
       this.pendingCloseDocumentId = null;
     });
     this.bindIfExists('createDocumentTabBtn', 'click', () => {
-      const width = clamp(Number(document.getElementById('newTabWidth').value), 8, 240);
-      const height = clamp(Number(document.getElementById('newTabHeight').value), 4, 120);
+      const width = clamp(Number(document.getElementById('newTabWidth').value), CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH);
+      const height = clamp(Number(document.getElementById('newTabHeight').value), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT);
       const remember = document.getElementById('rememberTabSize').checked;
       this.tabDefaults = remember ? { width, height } : null;
       if (remember) localStorage.setItem('rigel-tab-defaults', JSON.stringify(this.tabDefaults));
@@ -1969,7 +2056,7 @@ class App {
     this.projectId = crypto.randomUUID?.() || String(Date.now());
     this.projectName = name;
     this.activeDocumentId = crypto.randomUUID?.() || `${Date.now()}-tab`;
-    const grid = new ANSIGrid(clamp(width, 8, 240), clamp(height, 4, 120));
+    const grid = new ANSIGrid(clamp(width, CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH), clamp(height, CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT));
     this.layers = [this.createLayer('Слой 1', grid)];
     this.activeLayerIndex = 0;
     this.grid = grid;
@@ -2053,7 +2140,10 @@ class App {
   } = {}) {
     this.stashActiveDocument();
     const id = crypto.randomUUID?.() || `${Date.now()}-tab`;
-    const grid = new ANSIGrid(clamp(Math.floor(width), 8, 240), clamp(Math.floor(height), 4, 120));
+    const grid = new ANSIGrid(
+      clamp(Math.floor(width), CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH),
+      clamp(Math.floor(height), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT),
+    );
     const layer = this.createLayer('Слой 1', grid);
     this.documents.push({
       id,
@@ -2405,8 +2495,8 @@ class App {
   }
 
   resizeCanvas(width, height) {
-    const nextWidth = clamp(Math.floor(width || this.grid.width), 8, 240);
-    const nextHeight = clamp(Math.floor(height || this.grid.height), 4, 120);
+    const nextWidth = clamp(Math.floor(width || this.grid.width), CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH);
+    const nextHeight = clamp(Math.floor(height || this.grid.height), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT);
     this.layers.forEach((layer) => layer.grid.resize(nextWidth, nextHeight));
     this.grid = this.layers[this.activeLayerIndex].grid;
     this.lighting.points = (this.lighting.points || []).map((point) => this.normalizeLightPoint(point));
@@ -2439,8 +2529,16 @@ class App {
           const deltaY = Math.round((moveEvent.clientY - start.y) / cellHeight);
           const fromWest = edge.includes('w');
           const fromNorth = edge.includes('n');
-          const width = clamp(start.width + (edge.includes('e') ? deltaX : fromWest ? -deltaX : 0), 8, 240);
-          const height = clamp(start.height + (edge.includes('s') ? deltaY : fromNorth ? -deltaY : 0), 4, 120);
+          const width = clamp(
+            start.width + (edge.includes('e') ? deltaX : fromWest ? -deltaX : 0),
+            CANVAS_MIN_WIDTH,
+            CANVAS_MAX_WIDTH,
+          );
+          const height = clamp(
+            start.height + (edge.includes('s') ? deltaY : fromNorth ? -deltaY : 0),
+            CANVAS_MIN_HEIGHT,
+            CANVAS_MAX_HEIGHT,
+          );
           const offsetX = fromWest ? width - start.width : 0;
           const offsetY = fromNorth ? height - start.height : 0;
           this.resizeLayersFromSnapshot(originals, width, height, offsetX, offsetY);
@@ -3501,10 +3599,16 @@ class App {
     const url = URL.createObjectURL(file);
     image.onload = () => {
       this.pendingImageImport = { image, file, url };
-      document.getElementById('imageImportPreview').src = url;
-      document.getElementById('imageImportWidth').value = String(this.grid.width);
-      document.getElementById('imageImportHeight').value = String(this.grid.height);
-      document.getElementById('imageImportDialog').showModal();
+      const preview = document.getElementById('imageImportPreview');
+      preview.removeAttribute('src');
+      preview.src = url;
+      const size = this.getImageImportInitialSize(image);
+      document.getElementById('imageImportWidth').value = String(size.width);
+      document.getElementById('imageImportHeight').value = String(size.height);
+      const dialog = document.getElementById('imageImportDialog');
+      dialog.style.display = '';
+      dialog.inert = false;
+      dialog.showModal();
       document.getElementById('imageInput').value = '';
     };
     image.onerror = () => {
@@ -3515,18 +3619,84 @@ class App {
     image.src = url;
   }
 
+  getImageImportInitialSize(image) {
+    const naturalWidth = Math.max(1, image.naturalWidth || this.grid.width);
+    const naturalHeight = Math.max(1, image.naturalHeight || this.grid.height);
+    return {
+      width: clamp(Math.round(naturalWidth), CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH),
+      height: clamp(Math.round(naturalHeight), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT),
+    };
+  }
+
+  clampImageImportFields() {
+    const widthInput = document.getElementById('imageImportWidth');
+    const heightInput = document.getElementById('imageImportHeight');
+    if (!widthInput || !heightInput) return;
+    let width = clamp(Math.floor(Number(widthInput.value) || 80), CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH);
+    let height = clamp(Math.floor(Number(heightInput.value) || 25), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT);
+    widthInput.value = String(width);
+    heightInput.value = String(height);
+  }
+
   clearPendingImageImport() {
     if (this.pendingImageImport?.url) URL.revokeObjectURL(this.pendingImageImport.url);
     this.pendingImageImport = null;
     const preview = document.getElementById('imageImportPreview');
     if (preview) preview.removeAttribute('src');
+    this.setImageImportBusy(false);
+    this.setImageImportProgress(0, '', true);
   }
 
-  applyPendingImageImport() {
-    if (!this.pendingImageImport) return;
+  closeImageImportDialog() {
+    const dialog = document.getElementById('imageImportDialog');
+    if (!dialog) return;
+    dialog.classList.remove('is-rendering');
+    dialog.querySelectorAll('input, select, button').forEach((control) => {
+      control.disabled = false;
+    });
+    try {
+      if (dialog.open) dialog.close();
+    } catch (error) {
+      console.warn('Image import dialog close failed, forcing hidden state', error);
+    }
+    dialog.removeAttribute('open');
+    dialog.inert = true;
+    dialog.style.display = 'none';
+  }
+
+  nextFrame() {
+    return new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+
+  setImageImportBusy(isBusy) {
+    this.imageImportBusy = isBusy;
+    const dialog = document.getElementById('imageImportDialog');
+    dialog?.classList.toggle('is-rendering', isBusy);
+    dialog?.querySelectorAll('input, select, button').forEach((control) => {
+      control.disabled = isBusy;
+    });
+  }
+
+  setImageImportProgress(value, text = '', hidden = false) {
+    const progress = document.getElementById('imageImportProgress');
+    const label = document.getElementById('imageImportProgressText');
+    const bar = document.getElementById('imageImportProgressBar');
+    if (!progress || !label || !bar) return;
+    progress.hidden = hidden;
+    const percent = clamp(Math.round(value), 0, 100);
+    label.textContent = text || `Рендер ${percent}%`;
+    bar.style.width = `${percent}%`;
+  }
+
+  async applyPendingImageImport() {
+    if (!this.pendingImageImport || this.imageImportBusy) return;
+    this.setImageImportBusy(true);
+    this.setImageImportProgress(0, 'Подготовка...');
+    await this.nextFrame();
+    this.clampImageImportFields();
     const { image, file } = this.pendingImageImport;
-    const width = clamp(Math.floor(Number(document.getElementById('imageImportWidth').value)), 8, 240);
-    const height = clamp(Math.floor(Number(document.getElementById('imageImportHeight').value)), 4, 120);
+    const width = clamp(Math.floor(Number(document.getElementById('imageImportWidth').value)), CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH);
+    const height = clamp(Math.floor(Number(document.getElementById('imageImportHeight').value)), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT);
     const fit = document.getElementById('imageImportFit').value;
     const charsetName = document.getElementById('imageImportCharset').value;
     const layerMode = document.getElementById('imageImportLayerMode').value;
@@ -3540,6 +3710,8 @@ class App {
     };
     const characters = Array.from(charsets[charsetName] || charsets.ascii);
 
+    this.setImageImportProgress(6, 'Создание слоя...');
+    await this.nextFrame();
     this.history.capture();
     if (resizeCanvas) this.resizeCanvas(width, height);
     const targetWidth = Math.min(width, this.grid.width);
@@ -3556,6 +3728,8 @@ class App {
       targetGrid = this.grid;
     }
 
+    this.setImageImportProgress(14, 'Чтение пикселей...');
+    await this.nextFrame();
     const canvas = document.createElement('canvas');
     canvas.width = targetWidth;
     canvas.height = targetHeight;
@@ -3575,6 +3749,10 @@ class App {
       drawY = (targetHeight - drawHeight) / 2;
     }
     ctx.clearRect(0, 0, targetWidth, targetHeight);
+    if (!transparent) {
+      ctx.fillStyle = this.bgColor;
+      ctx.fillRect(0, 0, targetWidth, targetHeight);
+    }
     ctx.drawImage(image, drawX, drawY, drawWidth, drawHeight);
     const pixels = ctx.getImageData(0, 0, targetWidth, targetHeight).data;
     const bayer = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]];
@@ -3590,13 +3768,17 @@ class App {
         if (dither) luminance = clamp(luminance + (bayer[y % 4][x % 4] / 15 - 0.5) * 0.16, 0, 1);
         const density = 1 - luminance;
         const char = characters[Math.round(density * (characters.length - 1))];
+        const pixelColor = rgbToHex(r, g, b);
+        const inkColor = luminance > 0.55
+          ? mixColors(pixelColor, '#000000', clamp(density * 0.55, 0.12, 0.55))
+          : mixColors(pixelColor, '#ffffff', clamp((1 - density) * 0.45, 0.12, 0.45));
         const fgAlpha = char === ' ' ? 0 : alpha;
-        const bgAlpha = transparent ? 0 : alpha;
+        const bgAlpha = alpha;
         if (fgAlpha <= 0 && bgAlpha <= 0) continue;
         targetGrid.setCell(x, y, {
           char,
-          fg: rgbToHex(r, g, b),
-          bg: this.bgColor,
+          fg: inkColor,
+          bg: pixelColor,
           brightness: luminance,
           density,
           fgAlpha,
@@ -3604,11 +3786,19 @@ class App {
           empty: false,
         });
       }
+      if (y % 4 === 0 || y === targetHeight - 1) {
+        this.setImageImportProgress(14 + ((y + 1) / targetHeight) * 76, `Рендер ${y + 1}/${targetHeight}`);
+        await this.nextFrame();
+      }
     }
+    this.setImageImportProgress(94, 'Обновление холста...');
+    await this.nextFrame();
     this.syncGridRefs();
-    this.clearPendingImageImport();
-    document.getElementById('imageImportDialog').close();
     this.render();
+    this.setImageImportProgress(100, 'Готово');
+    this.imageImportBusy = false;
+    this.closeImageImportDialog();
+    this.clearPendingImageImport();
   }
 
   exportImage(format) {
@@ -3676,6 +3866,9 @@ class App {
         brushLevel: this.brushLevel,
         brushSize: this.brushSize,
         brushSmoothing: this.brushSmoothing,
+        fillMode: this.fillMode,
+        fillContiguous: this.fillContiguous,
+        fillClearCharacters: this.fillClearCharacters,
         magicTolerance: this.magicTolerance,
         magicContiguous: this.magicContiguous,
         zoomMode: this.zoomMode,
@@ -3766,6 +3959,9 @@ class App {
     this.brushLevel = settings.brushLevel ?? this.brushLevel;
     this.brushSize = settings.brushSize || this.brushSize;
     this.brushSmoothing = settings.brushSmoothing ?? this.brushSmoothing;
+    this.fillMode = ['all', 'background', 'character'].includes(settings.fillMode) ? settings.fillMode : this.fillMode;
+    this.fillContiguous = settings.fillContiguous === true;
+    this.fillClearCharacters = settings.fillClearCharacters ?? this.fillClearCharacters;
     this.magicTolerance = settings.magicTolerance ?? this.magicTolerance;
     this.magicContiguous = settings.magicContiguous ?? this.magicContiguous;
     this.zoomMode = settings.zoomMode || this.zoomMode;
@@ -3781,6 +3977,12 @@ class App {
     document.getElementById('brushLevel').value = String(Math.round(this.brushLevel * 100));
     document.getElementById('brushSize').value = String(this.brushSize);
     document.getElementById('brushSmoothing').checked = this.brushSmoothing;
+    const fillMode = document.getElementById('fillMode');
+    if (fillMode) fillMode.value = this.fillMode;
+    const fillContiguous = document.getElementById('fillContiguous');
+    if (fillContiguous) fillContiguous.checked = this.fillContiguous;
+    const fillClearCharacters = document.getElementById('fillClearCharacters');
+    if (fillClearCharacters) fillClearCharacters.checked = this.fillClearCharacters;
     document.getElementById('magicTolerance').value = String(this.magicTolerance);
     document.getElementById('magicToleranceValue').textContent = String(this.magicTolerance);
     document.getElementById('magicContiguous').checked = this.magicContiguous;
