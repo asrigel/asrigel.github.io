@@ -12,7 +12,7 @@ export class PluginManager {
     if (!plugin?.manifest?.id) throw new Error('Plugin manifest.id is required');
     const id = plugin.manifest.id;
     const previous = this.plugins.get(id);
-    if (previous?.destroy) previous.destroy(this.api);
+    if (previous?.destroy) previous.destroy(previous.custom ? this.publicApi : this.api);
     const instance = { ...plugin, enabled: plugin.enabled !== false };
     this.plugins.set(id, instance);
     if (instance.type === 'effect' && !this.effectOrder.includes(id)) this.effectOrder.push(id);
@@ -25,7 +25,7 @@ export class PluginManager {
   unregister(id) {
     const plugin = this.plugins.get(id);
     if (!plugin) return false;
-    plugin.destroy?.(this.api);
+    plugin.destroy?.(plugin.custom ? this.publicApi : this.api);
     this.plugins.delete(id);
     this.effectOrder = this.effectOrder.filter((item) => item !== id);
     this.layerEffectOrder = this.layerEffectOrder.filter((item) => item !== id);

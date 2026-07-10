@@ -47,6 +47,19 @@ class App {
         mixColors,
         rgbToHex,
         version: '1.0.0',
+        layout: {
+          registerPanel: (options) => this.registerPluginPanel(options),
+          unregisterPanel: (id) => this.unregisterPluginPanel(id),
+          openPanel: (id) => this.openPluginPanel(id),
+          closePanel: (id) => this.closePluginPanel(id),
+          dockPanel: (id) => this.dockPanel(id),
+          floatPanel: (id) => this.floatPanel(id),
+          save: () => this.savePanelLayout(),
+        },
+        effects: {
+          applyLayer: (pluginId) => this.applyPluginLayerEffect(pluginId),
+          listLayerEffects: () => this.pluginManager.getLayerEffects().map((plugin) => plugin.manifest),
+        },
       },
     });
     this.pluginManager.register(createLightingPlugin());
@@ -142,6 +155,9 @@ class App {
     this.lightMarkerFrame = null;
     this.zoomStatusFrame = null;
     this.customPluginSources = this.readCustomPluginSources();
+    this.pluginPanels = new Map();
+    this.imageImportNaturalSize = { width: 80, height: 25 };
+    this.imageImportAspect = 80 / 25;
 
     this.bindEvents();
     this.applyUiTheme();
@@ -157,6 +173,7 @@ class App {
     this.updatePreview();
     this.updateLayers();
     this.renderDocumentTabs();
+    this.renderEffectsMenuGroups();
     this.restoreCustomPlugins();
   }
 
@@ -276,6 +293,18 @@ class App {
       const input = document.getElementById('commandPaletteInput');
       if (input) input.value = '';
     });
+    this.bindIfExists('imageImportScale', 'input', () => this.updateImageImportFromScale());
+    this.bindSizeControls({
+      widthId: 'imageImportWidth',
+      heightId: 'imageImportHeight',
+      squareId: 'imageImportSquare',
+      ratioId: 'imageImportLockRatio',
+      minWidth: CANVAS_MIN_WIDTH,
+      minHeight: CANVAS_MIN_HEIGHT,
+      getRatio: () => this.cellCountRatioForVisualAspect(this.imageImportAspect || 1),
+      getSquareRatio: () => this.cellCountRatioForVisualAspect(1),
+      afterChange: () => this.syncImageImportScaleFromFields(),
+    });
     this.bindIfExists('imageImportWidth', 'change', () => this.clampImageImportFields());
     this.bindIfExists('imageImportHeight', 'change', () => this.clampImageImportFields());
     this.bindIfExists('applyImageImportBtn', 'click', () => {
@@ -342,6 +371,64 @@ class App {
     if (element) {
       element.addEventListener(eventName, handler);
     }
+  }
+
+  cellCountRatioForVisualAspect(visualAspect = 1) {
+    return Math.max(0.0001, Number(visualAspect) || 1) * (this.renderer.cellHeight / this.renderer.cellWidth);
+  }
+
+  bindSizeControls({
+    widthId,
+    heightId,
+    squareId,
+    ratioId,
+    minWidth = CANVAS_MIN_WIDTH,
+    minHeight = CANVAS_MIN_HEIGHT,
+    getRatio = () => 1,
+    getSquareRatio = () => this.cellCountRatioForVisualAspect(1),
+    afterChange = () => {},
+  }) {
+    const width = document.getElementById(widthId);
+    const height = document.getElementById(heightId);
+    const square = document.getElementById(squareId);
+    const ratio = document.getElementById(ratioId);
+    if (!width || !height) return;
+    let syncing = false;
+    const clampValue = (value, min, max) => clamp(Math.floor(Number(value) || min), min, max);
+    const sync = (source) => {
+      if (syncing) return;
+      syncing = true;
+      const widthValue = clampValue(width.value, minWidth, CANVAS_MAX_WIDTH);
+      const heightValue = clampValue(height.value, minHeight, CANVAS_MAX_HEIGHT);
+      if (square?.checked) {
+        const squareRatio = Math.max(0.0001, Number(getSquareRatio()) || 1);
+        if (source === 'height') {
+          width.value = String(clamp(Math.round(heightValue * squareRatio), minWidth, CANVAS_MAX_WIDTH));
+          height.value = String(heightValue);
+        } else {
+          width.value = String(widthValue);
+          height.value = String(clamp(Math.round(widthValue / squareRatio), minHeight, CANVAS_MAX_HEIGHT));
+        }
+      } else if (ratio?.checked) {
+        const aspect = Math.max(0.0001, Number(getRatio()) || 1);
+        if (source === 'height') {
+          width.value = String(clamp(Math.round(heightValue * aspect), minWidth, CANVAS_MAX_WIDTH));
+          height.value = String(heightValue);
+        } else {
+          width.value = String(widthValue);
+          height.value = String(clamp(Math.round(widthValue / aspect), minHeight, CANVAS_MAX_HEIGHT));
+        }
+      } else {
+        width.value = String(widthValue);
+        height.value = String(heightValue);
+      }
+      syncing = false;
+      afterChange();
+    };
+    width.addEventListener('input', () => sync('width'));
+    height.addEventListener('input', () => sync('height'));
+    square?.addEventListener('change', () => sync('width'));
+    ratio?.addEventListener('change', () => sync('width'));
   }
 
   selectTool(tool) {
@@ -931,13 +1018,19 @@ class App {
   }
 
   async registerPluginSource(source, name, { persist = true } = {}) {
-    const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+    const normalizedSource = source
+      .replaceAll("from './js/sdk/rigelPluginSdk.js'", "from '/js/sdk/rigelPluginSdk.js'")
+      .replaceAll('from "./js/sdk/rigelPluginSdk.js"', 'from "/js/sdk/rigelPluginSdk.js"');
+    const url = URL.createObjectURL(new Blob([normalizedSource], { type: 'text/javascript' }));
     try {
       const module = await import(`${url}#${Date.now()}`);
       const exported = module.default || module.plugin || module.createPlugin;
       const plugin = typeof exported === 'function' ? exported(this.pluginManager.publicApi) : exported;
       if (!plugin?.manifest?.id) throw new Error('Plugin must export manifest.id');
-      if (!['effect', 'layer-effect'].includes(plugin.type)) throw new Error('Plugin type must be effect or layer-effect');
+      plugin.type ||= 'ui';
+      if (!['effect', 'layer-effect', 'ui', 'tool'].includes(plugin.type)) {
+        throw new Error('Plugin type must be effect, layer-effect, ui or tool');
+      }
       plugin.custom = true;
       plugin.manifest = {
         version: '0.0.0',
@@ -969,10 +1062,37 @@ class App {
   }
 
   renderPluginList() {
+    this.renderEffectsMenuGroups();
     const list = document.getElementById('pluginList');
     if (!list) return;
     list.innerHTML = '';
-    this.pluginManager.list().forEach((plugin) => {
+    const groups = new Map();
+    this.pluginManager.list()
+      .sort((a, b) => `${a.group || 'Other'}:${a.name || a.id}`.localeCompare(`${b.group || 'Other'}:${b.name || b.id}`))
+      .forEach((plugin) => {
+        const group = plugin.group || (plugin.custom ? 'Custom' : 'Other');
+        if (!groups.has(group)) groups.set(group, []);
+        groups.get(group).push(plugin);
+      });
+
+    groups.forEach((plugins, group) => {
+      const section = document.createElement('section');
+      section.className = 'plugin-group';
+      const header = document.createElement('header');
+      const title = document.createElement('strong');
+      const count = document.createElement('span');
+      title.textContent = group;
+      count.textContent = `${plugins.length}`;
+      header.append(title, count);
+      const cards = document.createElement('div');
+      cards.className = 'plugin-group-cards';
+      plugins.forEach((plugin) => cards.appendChild(this.createPluginCard(plugin)));
+      section.append(header, cards);
+      list.appendChild(section);
+    });
+  }
+
+  createPluginCard(plugin) {
       const card = document.createElement('div');
       card.className = 'plugin-card';
       const meta = document.createElement('div');
@@ -981,6 +1101,17 @@ class App {
       title.textContent = plugin.name || plugin.id;
       details.textContent = `${plugin.type} · v${plugin.version || '0.0.0'} · ${plugin.sandbox || 'default'}${plugin.custom ? ' · custom' : ''}`;
       meta.append(title, details);
+      if (Array.isArray(plugin.tags) && plugin.tags.length) {
+        const tags = document.createElement('div');
+        tags.className = 'plugin-tags';
+        plugin.tags.slice(0, 6).forEach((tag) => {
+          const chip = document.createElement('span');
+          chip.className = 'plugin-tag';
+          chip.textContent = tag;
+          tags.appendChild(chip);
+        });
+        meta.appendChild(tags);
+      }
 
       const actions = document.createElement('div');
       actions.className = 'plugin-card-actions';
@@ -990,6 +1121,21 @@ class App {
         apply.textContent = 'Применить';
         apply.addEventListener('click', () => this.applyPluginLayerEffect(plugin.id));
         actions.appendChild(apply);
+      }
+      if (plugin.type === 'ui' && this.pluginPanels.has(plugin.id)) {
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.textContent = 'Открыть';
+        open.addEventListener('click', () => this.openPluginPanel(plugin.id));
+        const dock = document.createElement('button');
+        dock.type = 'button';
+        dock.textContent = 'Dock';
+        dock.addEventListener('click', () => this.dockPanel(plugin.id));
+        const float = document.createElement('button');
+        float.type = 'button';
+        float.textContent = 'Float';
+        float.addEventListener('click', () => this.floatPanel(plugin.id));
+        actions.append(open, dock, float);
       }
       const toggle = document.createElement('button');
       toggle.type = 'button';
@@ -1008,7 +1154,51 @@ class App {
         actions.appendChild(remove);
       }
       card.append(meta, actions);
-      list.appendChild(card);
+      return card;
+  }
+
+  renderEffectsMenuGroups() {
+    const host = document.getElementById('effectsPluginGroups');
+    if (!host) return;
+    host.innerHTML = '';
+    const groups = new Map();
+    this.pluginManager.getLayerEffects()
+      .map((plugin) => plugin.manifest)
+      .sort((a, b) => `${a.group || 'Other'}:${a.name || a.id}`.localeCompare(`${b.group || 'Other'}:${b.name || b.id}`))
+      .forEach((manifest) => {
+        const group = manifest.group || 'Other';
+        if (!groups.has(group)) groups.set(group, []);
+        groups.get(group).push(manifest);
+      });
+
+    groups.forEach((plugins, group) => {
+      const submenu = document.createElement('div');
+      submenu.className = 'menu-submenu';
+      const trigger = document.createElement('button');
+      trigger.className = 'menu-submenu-trigger';
+      trigger.type = 'button';
+      trigger.setAttribute('aria-haspopup', 'true');
+      trigger.setAttribute('aria-expanded', 'false');
+      const label = document.createElement('span');
+      label.textContent = group;
+      const arrow = document.createElement('span');
+      arrow.className = 'submenu-arrow';
+      arrow.textContent = '▶';
+      trigger.append(label, arrow);
+
+      const popup = document.createElement('div');
+      popup.className = 'menu-popup menu-submenu-popup';
+      popup.setAttribute('role', 'menu');
+      plugins.forEach((plugin) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.menuAction = `plugin-run:${plugin.id}`;
+        button.textContent = plugin.name || plugin.id;
+        popup.appendChild(button);
+      });
+
+      submenu.append(trigger, popup);
+      host.appendChild(submenu);
     });
   }
 
@@ -2214,14 +2404,42 @@ class App {
     this.bindIfExists('showStartBtn', 'click', () => this.showStartScreen());
     this.bindIfExists('addDocumentTabBtn', 'click', () => this.openNewTabDialog());
     this.bindIfExists('newProjectPreset', 'change', (event) => this.applyProjectPreset(event.target.value));
+    this.bindSizeControls({
+      widthId: 'newProjectWidth',
+      heightId: 'newProjectHeight',
+      squareId: 'newProjectSquare',
+      ratioId: 'newProjectLockRatio',
+      getRatio: () => {
+        const width = Number(document.getElementById('newProjectWidth')?.dataset.ratioWidth || 120);
+        const height = Number(document.getElementById('newProjectHeight')?.dataset.ratioHeight || 40);
+        return width / Math.max(1, height);
+      },
+    });
+    this.bindSizeControls({
+      widthId: 'newTabWidth',
+      heightId: 'newTabHeight',
+      squareId: 'newTabSquare',
+      ratioId: 'newTabLockRatio',
+      getRatio: () => {
+        const width = Number(document.getElementById('newTabWidth')?.dataset.ratioWidth || this.grid.width);
+        const height = Number(document.getElementById('newTabHeight')?.dataset.ratioHeight || this.grid.height);
+        return width / Math.max(1, height);
+      },
+    });
     document.querySelectorAll('input[name="projectOrientation"]').forEach((input) => {
       input.addEventListener('change', () => {
         const width = document.getElementById('newProjectWidth');
         const height = document.getElementById('newProjectHeight');
+        if (document.getElementById('newProjectSquare')?.checked) {
+          height.value = String(clamp(Math.round(Number(width.value) / this.cellCountRatioForVisualAspect(1)), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT));
+          return;
+        }
         const portrait = document.querySelector('input[name="projectOrientation"]:checked').value === 'portrait';
         const values = [Number(width.value), Number(height.value)];
         width.value = String(portrait ? Math.min(...values) : Math.max(...values));
         height.value = String(portrait ? Math.max(...values) : Math.min(...values));
+        width.dataset.ratioWidth = width.value;
+        height.dataset.ratioHeight = height.value;
       });
     });
     this.bindIfExists('createProjectBtn', 'click', () => {
@@ -2297,6 +2515,12 @@ class App {
   }
 
   openNewProjectDialog() {
+    const width = document.getElementById('newProjectWidth');
+    const height = document.getElementById('newProjectHeight');
+    if (width && height) {
+      width.dataset.ratioWidth = width.value;
+      height.dataset.ratioHeight = height.value;
+    }
     document.getElementById('newProjectDialog').showModal();
   }
 
@@ -2314,6 +2538,10 @@ class App {
     document.getElementById('newTabName').value = `Вкладка ${this.documents.length + 1}`;
     document.getElementById('newTabWidth').value = String(defaults.width);
     document.getElementById('newTabHeight').value = String(defaults.height);
+    document.getElementById('newTabWidth').dataset.ratioWidth = String(defaults.width);
+    document.getElementById('newTabHeight').dataset.ratioHeight = String(defaults.height);
+    document.getElementById('newTabSquare').checked = Math.abs(defaults.width / Math.max(1, defaults.height) - this.cellCountRatioForVisualAspect(1)) < 0.05;
+    document.getElementById('newTabLockRatio').checked = false;
     document.getElementById('rememberTabSize').checked = Boolean(this.tabDefaults);
     const dialog = document.getElementById('newTabDialog');
     dialog.showModal();
@@ -2330,8 +2558,14 @@ class App {
     };
     if (!presets[preset]) return;
     const [width, height] = presets[preset];
-    document.getElementById('newProjectWidth').value = String(width);
-    document.getElementById('newProjectHeight').value = String(height);
+    const widthInput = document.getElementById('newProjectWidth');
+    const heightInput = document.getElementById('newProjectHeight');
+    widthInput.value = String(width);
+    heightInput.value = String(document.getElementById('newProjectSquare')?.checked
+      ? clamp(Math.round(width / this.cellCountRatioForVisualAspect(1)), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT)
+      : height);
+    widthInput.dataset.ratioWidth = String(width);
+    heightInput.dataset.ratioHeight = String(height);
   }
 
   createProject({ name, width, height }) {
@@ -3709,6 +3943,137 @@ class App {
     this.restorePanelLayout();
   }
 
+  registerPluginPanel({
+    id,
+    title = id,
+    docked = true,
+    hidden = false,
+    width = 270,
+    render = null,
+  } = {}) {
+    if (!id) throw new Error('Panel id is required');
+    this.unregisterPluginPanel(id);
+    const panel = document.createElement('section');
+    panel.className = 'floating-panel plugin-panel';
+    panel.dataset.panelId = id;
+    panel.dataset.pluginPanel = 'true';
+    panel.style.width = `${width}px`;
+    panel.hidden = hidden;
+
+    const header = document.createElement('header');
+    header.className = 'floating-panel-header';
+    const strong = document.createElement('strong');
+    strong.textContent = title;
+    const actions = document.createElement('div');
+    const dockButton = document.createElement('button');
+    dockButton.type = 'button';
+    dockButton.title = 'Закрепить / открепить';
+    dockButton.textContent = docked ? '↗' : '◆';
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.title = 'Закрыть';
+    closeButton.textContent = '×';
+    actions.append(dockButton, closeButton);
+    header.append(strong, actions);
+
+    const body = document.createElement('div');
+    body.className = 'floating-panel-body plugin-panel-body';
+    panel.append(header, body);
+    document.body.appendChild(panel);
+
+    this.pluginPanels.set(id, { id, panel, body, title });
+    dockButton.addEventListener('click', () => this.togglePanelDock(id));
+    closeButton.addEventListener('click', () => this.closePluginPanel(id));
+
+    if (typeof render === 'function') {
+      const output = render({ panel, body, api: this.pluginManager.publicApi });
+      if (typeof output === 'string') body.innerHTML = output;
+      else if (output instanceof Node) body.appendChild(output);
+    } else if (typeof render === 'string') {
+      body.innerHTML = render;
+    }
+
+    this.attachPanelDrag(panel);
+    this.attachFloatingPanelMove(panel);
+    const saved = this.getSavedPanelState(id);
+    const shouldDock = saved ? saved.docked : docked;
+    if (shouldDock) this.dockPanel(id, { save: false });
+    else this.floatPanel(id, {
+      left: saved?.left,
+      top: saved?.top,
+      save: false,
+    });
+    if (saved?.hidden === true) panel.hidden = true;
+    this.savePanelLayout();
+    return panel;
+  }
+
+  unregisterPluginPanel(id) {
+    const record = this.pluginPanels.get(id);
+    if (!record) return;
+    record.panel.remove();
+    this.pluginPanels.delete(id);
+    this.savePanelLayout();
+  }
+
+  getPanelById(id) {
+    const safeId = typeof CSS !== 'undefined' && CSS.escape
+      ? CSS.escape(id)
+      : String(id).replaceAll('"', '\\"');
+    return this.pluginPanels.get(id)?.panel
+      || document.querySelector(`[data-panel-id="${safeId}"]`);
+  }
+
+  openPluginPanel(id) {
+    const panel = this.getPanelById(id);
+    if (!panel) return;
+    panel.hidden = false;
+    if (panel.parentElement?.id !== 'rightDock' && !panel.style.left) {
+      this.floatPanel(id, { save: false });
+    }
+    this.savePanelLayout();
+  }
+
+  closePluginPanel(id) {
+    const panel = this.getPanelById(id);
+    if (!panel) return;
+    panel.hidden = true;
+    this.savePanelLayout();
+  }
+
+  togglePanelDock(id) {
+    const panel = this.getPanelById(id);
+    if (!panel) return;
+    if (panel.parentElement?.id === 'rightDock') this.floatPanel(id);
+    else this.dockPanel(id);
+  }
+
+  dockPanel(id, { save = true, prepend = false } = {}) {
+    const panel = this.getPanelById(id);
+    const dock = document.getElementById('rightDock');
+    if (!panel || !dock) return;
+    panel.classList.add('docked');
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.querySelector('.floating-panel-header button')?.replaceChildren(document.createTextNode('↗'));
+    if (prepend) dock.prepend(panel);
+    else dock.appendChild(panel);
+    this.attachPanelDrag(panel);
+    if (save) this.savePanelLayout();
+  }
+
+  floatPanel(id, { left = '', top = '', save = true } = {}) {
+    const panel = this.getPanelById(id);
+    if (!panel) return;
+    panel.classList.remove('docked');
+    document.body.appendChild(panel);
+    panel.style.left = left || `${Math.max(80, window.innerWidth - 620)}px`;
+    panel.style.top = top || '150px';
+    panel.querySelector('.floating-panel-header button')?.replaceChildren(document.createTextNode('◆'));
+    this.attachFloatingPanelMove(panel);
+    if (save) this.savePanelLayout();
+  }
+
   attachPanelDrag(panel) {
     if (!panel || panel.dataset.dragBound === 'true') return;
     const handle = panel.querySelector(':scope > h2, :scope > .floating-panel-header');
@@ -3734,11 +4099,49 @@ class App {
     });
   }
 
+  attachFloatingPanelMove(panel) {
+    if (!panel || panel.dataset.floatMoveBound === 'true') return;
+    const handle = panel.querySelector(':scope > .floating-panel-header');
+    if (!handle) return;
+    panel.dataset.floatMoveBound = 'true';
+    let drag = null;
+    handle.addEventListener('pointerdown', (event) => {
+      if (panel.parentElement?.id === 'rightDock' || event.target.closest('button')) return;
+      const rect = panel.getBoundingClientRect();
+      drag = { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+      handle.setPointerCapture(event.pointerId);
+    });
+    handle.addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      panel.style.left = `${clamp(event.clientX - drag.offsetX, 0, window.innerWidth - panel.offsetWidth)}px`;
+      panel.style.top = `${clamp(event.clientY - drag.offsetY, 0, window.innerHeight - panel.offsetHeight)}px`;
+    });
+    handle.addEventListener('pointerup', () => {
+      if (!drag) return;
+      drag = null;
+      this.savePanelLayout();
+    });
+    handle.addEventListener('pointercancel', () => {
+      drag = null;
+    });
+  }
+
   savePanelLayout() {
     const lightingPanel = document.getElementById('lightingPanel');
     const order = [...document.querySelectorAll('#rightDock > [data-panel-id]')].map((panel) => panel.dataset.panelId);
+    const panels = {};
+    document.querySelectorAll('[data-panel-id]').forEach((panel) => {
+      const id = panel.dataset.panelId;
+      panels[id] = {
+        docked: panel.parentElement?.id === 'rightDock',
+        hidden: panel.hidden === true,
+        left: panel.style.left || '',
+        top: panel.style.top || '',
+      };
+    });
     const layout = {
       order,
+      panels,
       lighting: {
         docked: lightingPanel?.parentElement?.id === 'rightDock',
         hidden: lightingPanel?.hidden === true,
@@ -3747,6 +4150,15 @@ class App {
       },
     };
     localStorage.setItem('rigel-panel-layout', JSON.stringify(layout));
+  }
+
+  getSavedPanelState(id) {
+    try {
+      const saved = JSON.parse(localStorage.getItem('rigel-panel-layout') || 'null');
+      return saved?.panels?.[id] || null;
+    } catch {
+      return null;
+    }
   }
 
   restorePanelLayout() {
@@ -3801,6 +4213,11 @@ class App {
       const panel = dock.querySelector(`[data-panel-id="${id}"]`);
       if (panel) dock.appendChild(panel);
     });
+    this.pluginPanels.forEach(({ panel }, id) => {
+      panel.hidden = true;
+      this.floatPanel(id, { left: '', top: '', save: false });
+    });
+    this.savePanelLayout();
   }
 
   createLayer(name, grid = new ANSIGrid(this.grid.width, this.grid.height)) {
@@ -4043,8 +4460,16 @@ class App {
       preview.removeAttribute('src');
       preview.src = url;
       const size = this.getImageImportInitialSize(image);
+      this.imageImportNaturalSize = { width: size.width, height: size.height };
+      this.imageImportAspect = size.width / Math.max(1, size.height);
       document.getElementById('imageImportWidth').value = String(size.width);
       document.getElementById('imageImportHeight').value = String(size.height);
+      document.getElementById('imageImportWidth').dataset.ratioWidth = String(size.width);
+      document.getElementById('imageImportHeight').dataset.ratioHeight = String(size.height);
+      document.getElementById('imageImportScale').value = '100';
+      document.getElementById('imageImportScaleValue').textContent = '100%';
+      document.getElementById('imageImportSquare').checked = false;
+      document.getElementById('imageImportLockRatio').checked = true;
       const dialog = document.getElementById('imageImportDialog');
       dialog.style.display = '';
       dialog.inert = false;
@@ -4062,9 +4487,13 @@ class App {
   getImageImportInitialSize(image) {
     const naturalWidth = Math.max(1, image.naturalWidth || this.grid.width);
     const naturalHeight = Math.max(1, image.naturalHeight || this.grid.height);
+    const visualAspect = naturalWidth / naturalHeight;
+    const cellRatio = this.cellCountRatioForVisualAspect(visualAspect);
+    const width = Math.round(naturalWidth);
+    const height = Math.round(width / cellRatio);
     return {
-      width: clamp(Math.round(naturalWidth), CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH),
-      height: clamp(Math.round(naturalHeight), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT),
+      width: clamp(width, CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH),
+      height: clamp(height, CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT),
     };
   }
 
@@ -4076,6 +4505,33 @@ class App {
     let height = clamp(Math.floor(Number(heightInput.value) || 25), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT);
     widthInput.value = String(width);
     heightInput.value = String(height);
+    this.syncImageImportScaleFromFields();
+  }
+
+  updateImageImportFromScale() {
+    const scale = Number(document.getElementById('imageImportScale')?.value || 100);
+    const scaleValue = document.getElementById('imageImportScaleValue');
+    const widthInput = document.getElementById('imageImportWidth');
+    const heightInput = document.getElementById('imageImportHeight');
+    if (!widthInput || !heightInput) return;
+    const natural = this.imageImportNaturalSize || { width: 80, height: 25 };
+    const width = clamp(Math.round(natural.width * (scale / 100)), CANVAS_MIN_WIDTH, CANVAS_MAX_WIDTH);
+    const height = document.getElementById('imageImportSquare')?.checked
+      ? clamp(Math.round(width / this.cellCountRatioForVisualAspect(1)), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT)
+      : clamp(Math.round(natural.height * (scale / 100)), CANVAS_MIN_HEIGHT, CANVAS_MAX_HEIGHT);
+    widthInput.value = String(width);
+    heightInput.value = String(height);
+    if (scaleValue) scaleValue.textContent = `${Math.round(scale)}%`;
+  }
+
+  syncImageImportScaleFromFields() {
+    const scaleInput = document.getElementById('imageImportScale');
+    const scaleValue = document.getElementById('imageImportScaleValue');
+    const width = Number(document.getElementById('imageImportWidth')?.value || 0);
+    const naturalWidth = Math.max(1, this.imageImportNaturalSize?.width || width || 1);
+    const scale = clamp(Math.round((width / naturalWidth) * 100), 5, 400);
+    if (scaleInput) scaleInput.value = String(scale);
+    if (scaleValue) scaleValue.textContent = `${scale}%`;
   }
 
   clearPendingImageImport() {

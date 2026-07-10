@@ -157,36 +157,52 @@
           <div id="effectsMenu" class="menu-popup" role="menu" hidden>
             <button data-menu-action="lighting" type="button">Освещение... <kbd>⌥1</kbd></button>
             <div class="menu-separator"></div>
-            <button data-menu-action="effect-invert" type="button">Инверсия цветов <kbd>⌥2</kbd></button>
-            <button data-menu-action="effect-grayscale" type="button">Черно-белый <kbd>⌥3</kbd></button>
-            <button data-menu-action="effect-contrast" type="button">Высокий контраст <kbd>⌥4</kbd></button>
-            <button data-menu-action="effect-color-shift" type="button">Сдвиг цвета <kbd>⌥5</kbd></button>
-            <button data-menu-action="effect-dither" type="button">ANSI-дизеринг <kbd>⌥6</kbd></button>
-            <button data-menu-action="effect-posterize" type="button">Постеризация <kbd>⌥7</kbd></button>
-            <button data-menu-action="effect-sepia" type="button">Сепия <kbd>⌥8</kbd></button>
-            <button data-menu-action="effect-neon" type="button">Неон <kbd>⌥9</kbd></button>
-            <button data-menu-action="effect-glow" type="button">Свечение <kbd>⌥0</kbd></button>
-            <button data-menu-action="effect-shadow" type="button">Тень <kbd>⌥-</kbd></button>
-            <button data-menu-action="effect-3d-render" type="button">3D render / объем <kbd>⌥R</kbd></button>
-            <button data-menu-action="effect-emboss" type="button">Рельеф <kbd>⌥E</kbd></button>
-            <button data-menu-action="remove-flat-background" type="button">Удалить однотонный фон слоя</button>
+            <div class="menu-submenu">
+              <button class="menu-submenu-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                <span>Color</span><span class="submenu-arrow">▶</span>
+              </button>
+              <div class="menu-popup menu-submenu-popup" role="menu">
+                <button data-menu-action="effect-invert" type="button">Инверсия цветов <kbd>⌥2</kbd></button>
+                <button data-menu-action="effect-grayscale" type="button">Черно-белый <kbd>⌥3</kbd></button>
+                <button data-menu-action="effect-contrast" type="button">Высокий контраст <kbd>⌥4</kbd></button>
+                <button data-menu-action="effect-color-shift" type="button">Сдвиг цвета <kbd>⌥5</kbd></button>
+                <button data-menu-action="effect-posterize" type="button">Постеризация <kbd>⌥7</kbd></button>
+                <button data-menu-action="effect-sepia" type="button">Сепия <kbd>⌥8</kbd></button>
+              </div>
+            </div>
+            <div class="menu-submenu">
+              <button class="menu-submenu-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                <span>Light / 3D</span><span class="submenu-arrow">▶</span>
+              </button>
+              <div class="menu-popup menu-submenu-popup" role="menu">
+                <button data-menu-action="effect-neon" type="button">Неон <kbd>⌥9</kbd></button>
+                <button data-menu-action="effect-glow" type="button">Свечение <kbd>⌥0</kbd></button>
+                <button data-menu-action="effect-shadow" type="button">Тень <kbd>⌥-</kbd></button>
+                <button data-menu-action="effect-3d-render" type="button">3D render / объем <kbd>⌥R</kbd></button>
+                <button data-menu-action="effect-emboss" type="button">Рельеф <kbd>⌥E</kbd></button>
+              </div>
+            </div>
+            <div class="menu-submenu">
+              <button class="menu-submenu-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                <span>Stylize</span><span class="submenu-arrow">▶</span>
+              </button>
+              <div class="menu-popup menu-submenu-popup" role="menu">
+                <button data-menu-action="effect-dither" type="button">ANSI-дизеринг <kbd>⌥6</kbd></button>
+                <button data-menu-action="texture" type="button">Шумовая текстура <kbd>⌥T</kbd></button>
+                <button data-menu-action="remove-flat-background" type="button">Удалить однотонный фон слоя</button>
+              </div>
+            </div>
+            <div class="menu-submenu">
+              <button class="menu-submenu-trigger" type="button" aria-haspopup="true" aria-expanded="false">
+                <span>Transform</span><span class="submenu-arrow">▶</span>
+              </button>
+              <div class="menu-popup menu-submenu-popup" role="menu">
+                <button data-menu-action="effect-mirror-x" type="button">Отразить по горизонтали <kbd>⌥H</kbd></button>
+                <button data-menu-action="effect-mirror-y" type="button">Отразить по вертикали <kbd>⌥V</kbd></button>
+              </div>
+            </div>
             <div class="menu-separator"></div>
-            <button data-menu-action="effect-mirror-x" type="button">Отразить по горизонтали <kbd>⌥H</kbd></button>
-            <button data-menu-action="effect-mirror-y" type="button">Отразить по вертикали <kbd>⌥V</kbd></button>
-            <div class="menu-separator"></div>
-            <button data-menu-action="texture" type="button">Шумовая текстура <kbd>⌥T</kbd></button>
-            <div class="menu-separator"></div>
-            <button data-menu-action="plugin-run:rigel.layer.outline" type="button">Plugin: Outline</button>
-            <button data-menu-action="plugin-run:rigel.layer.blur" type="button">Plugin: Blur</button>
-            <button data-menu-action="plugin-run:rigel.layer.bloom" type="button">Plugin: Bloom</button>
-            <button data-menu-action="plugin-run:rigel.layer.drop-shadow" type="button">Plugin: Drop Shadow</button>
-            <button data-menu-action="plugin-run:rigel.layer.noise" type="button">Plugin: Noise</button>
-            <button data-menu-action="plugin-run:rigel.layer.color-correction" type="button">Plugin: Color Correction</button>
-            <button data-menu-action="plugin-run:rigel.layer.lut-warm" type="button">Plugin: LUT Warm</button>
-            <button data-menu-action="plugin-run:rigel.layer.motion-blur" type="button">Plugin: Motion Blur</button>
-            <button data-menu-action="plugin-run:rigel.layer.dof" type="button">Plugin: DOF</button>
-            <button data-menu-action="plugin-run:rigel.layer.scanlines" type="button">Plugin: CRT Scanlines</button>
-            <button data-menu-action="plugin-run:rigel.layer.sharpen" type="button">Plugin: Sharpen</button>
+            <div id="effectsPluginGroups" class="effect-plugin-groups"></div>
             <div class="menu-separator"></div>
             <button data-menu-action="plugins" type="button">Плагины...</button>
             <button data-menu-action="plugin-load" type="button">Загрузить свой plugin...</button>
@@ -458,6 +474,8 @@
     id: 'my.effect',
     name: 'My Effect',
     version: '1.0.0',
+    group: 'Color',
+    tags: ['custom', 'ansi'],
     sandbox: 'pure-grid-transform'
   },
   apply(grid, { ANSIGrid, mixColors }) {
@@ -537,6 +555,10 @@
           <label>Ширина <input id="newTabWidth" type="number" min="8" value="80" /></label>
           <label>Высота <input id="newTabHeight" type="number" min="4" value="25" /></label>
         </div>
+        <div class="size-mode-row">
+          <label class="check-row"><input id="newTabSquare" type="checkbox" /> Квадрат визуально</label>
+          <label class="check-row"><input id="newTabLockRatio" type="checkbox" /> Пропорции</label>
+        </div>
         <label class="check-row remember-tab-size">
           <input id="rememberTabSize" type="checkbox" />
           Запомнить размер для следующих вкладок
@@ -558,6 +580,16 @@
           <div class="project-size-row">
             <label>Ширина <input id="imageImportWidth" type="number" min="8" value="80" /></label>
             <label>Высота <input id="imageImportHeight" type="number" min="4" value="25" /></label>
+          </div>
+          <div class="image-scale-row">
+            <label>Масштаб
+              <input id="imageImportScale" type="range" min="5" max="400" step="1" value="100" />
+            </label>
+            <output id="imageImportScaleValue">100%</output>
+          </div>
+          <div class="size-mode-row">
+            <label class="check-row"><input id="imageImportSquare" type="checkbox" /> Квадрат визуально</label>
+            <label class="check-row"><input id="imageImportLockRatio" type="checkbox" checked /> Пропорции</label>
           </div>
           <label>Вписывание
             <select id="imageImportFit">
@@ -611,6 +643,10 @@
         <div class="project-size-row">
           <label>Ширина <input id="newProjectWidth" type="number" min="8" value="120" /></label>
           <label>Высота <input id="newProjectHeight" type="number" min="4" value="40" /></label>
+        </div>
+        <div class="size-mode-row">
+          <label class="check-row"><input id="newProjectSquare" type="checkbox" /> Квадрат визуально</label>
+          <label class="check-row"><input id="newProjectLockRatio" type="checkbox" /> Пропорции</label>
         </div>
         <fieldset class="orientation-control">
           <legend>Ориентация</legend>

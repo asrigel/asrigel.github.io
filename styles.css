@@ -17,6 +17,8 @@
   --edge-light: var(--panel-border-light);
   --text: var(--text-main);
   --muted: #c0c3c6;
+  --text-strong: var(--text-main);
+  --text-muted: var(--muted);
   --blue: #365f87;
   --blue-bright: #5b86ad;
   --workspace: var(--workspace-bg);
@@ -319,6 +321,10 @@ input[type="color"] {
 
 .menu-submenu {
   position: relative;
+}
+
+.effect-plugin-groups {
+  display: contents;
 }
 
 .menu-submenu-trigger .submenu-arrow {
@@ -801,10 +807,40 @@ input[type="color"] {
 
 .plugin-list {
   display: grid;
-  gap: 6px;
+  gap: 10px;
   max-height: min(460px, calc(100dvh - 260px));
   overflow: auto;
   padding-right: 2px;
+}
+
+.plugin-group {
+  display: grid;
+  gap: 6px;
+  border: 1px solid #07090c;
+  background: rgba(8, 12, 16, 0.24);
+}
+
+.plugin-group > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 25px;
+  padding: 0 8px;
+  border-bottom: 1px solid #07090c;
+  background: #344a62;
+  color: var(--text-strong);
+}
+
+.plugin-group > header span {
+  min-width: 20px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.plugin-group-cards {
+  display: grid;
+  gap: 5px;
+  padding: 6px;
 }
 
 .plugin-card {
@@ -829,6 +865,22 @@ input[type="color"] {
 .plugin-card small {
   color: var(--muted);
   margin-top: 3px;
+}
+
+.plugin-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+
+.plugin-tag {
+  padding: 1px 5px;
+  border: 1px solid #111820;
+  background: #202b36;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 16px;
 }
 
 .plugin-card-actions {
@@ -1665,6 +1717,16 @@ canvas.selection-dragging {
   gap: 7px;
 }
 
+.plugin-stack {
+  display: grid;
+  gap: 7px;
+}
+
+.plugin-stack p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
 .check-row {
   display: flex;
   align-items: center;
@@ -1777,6 +1839,38 @@ canvas.selection-dragging {
 .project-size-row label {
   display: grid;
   gap: 4px;
+}
+
+.size-mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  align-items: center;
+}
+
+.size-mode-row .check-row {
+  grid-template-columns: auto 1fr !important;
+  min-height: 22px;
+}
+
+.image-scale-row {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 54px;
+  gap: 10px;
+  align-items: end;
+}
+
+.image-scale-row label {
+  display: grid;
+  gap: 4px;
+}
+
+.image-scale-row output {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding-bottom: 4px;
 }
 
 .orientation-control {

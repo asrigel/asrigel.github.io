@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { ANSIGrid } from '../js/grid.js';
 import { BrushEngine } from '../js/brushEngine.js';
 import { AnsiExporter } from '../js/exporter.js';
+import { PluginManager } from '../js/core/pluginManager.js';
+import { createLayerEffectPlugin, createPanelPlugin } from '../js/sdk/rigelPluginSdk.js';
+import { createBuiltinLayerEffectPlugins } from '../js/effects/builtinLayerPlugins.js';
 
 test('an empty grid exports no whitespace', () => {
   const grid = new ANSIGrid(80, 25);
@@ -253,4 +256,79 @@ test('brush strokes can be clipped to a selected cell mask', () => {
     }
   }
   assert.deepEqual(painted, ['2,2']);
+});
+
+test('plugin SDK creates UI panel plugins with a stable manifest', () => {
+  let registered = null;
+  const plugin = createPanelPlugin({
+    id: 'test.panel',
+    name: 'Test Panel',
+    render: () => 'hello',
+  });
+
+  plugin.setup({
+    layout: {
+      registerPanel(options) {
+        registered = options;
+      },
+    },
+  });
+
+  assert.equal(plugin.type, 'ui');
+  assert.equal(plugin.manifest.id, 'test.panel');
+  assert.equal(plugin.manifest.version, '1.0.0');
+  assert.equal(plugin.manifest.group, 'Panels');
+  assert.deepEqual(plugin.manifest.tags, []);
+  assert.equal(registered.id, 'test.panel');
+  assert.equal(registered.title, 'Test Panel');
+});
+
+test('custom plugins receive the public API for setup and layer effects', () => {
+  const calls = [];
+  const manager = new PluginManager({
+    secret: true,
+    publicApi: { exposed: true },
+  });
+  const plugin = createLayerEffectPlugin({
+    id: 'test.effect',
+    name: 'Test Effect',
+    apply(grid, api) {
+      calls.push(api);
+      return grid;
+    },
+  });
+  plugin.custom = true;
+  plugin.setup = (api) => calls.push(api);
+
+  manager.register(plugin);
+  manager.applyLayerEffect('test.effect', new ANSIGrid(1, 1));
+
+  assert.deepEqual(calls, [{ exposed: true }, { exposed: true }]);
+});
+
+test('built-in layer plugins expose groups and tags for the plugin manager', () => {
+  const plugins = createBuiltinLayerEffectPlugins();
+  const ids = plugins.map((plugin) => plugin.manifest.id);
+  assert.ok(ids.includes('rigel.layer.invert'));
+  assert.ok(ids.includes('rigel.layer.posterize'));
+  assert.ok(ids.includes('rigel.layer.terminal-dither'));
+  assert.ok(ids.includes('rigel.layer.edge-relief'));
+  assert.ok(ids.includes('rigel.layer.duotone-cyan-magenta'));
+  assert.ok(plugins.every((plugin) => plugin.manifest.group));
+  assert.ok(plugins.every((plugin) => Array.isArray(plugin.manifest.tags)));
+});
+
+test('plugin manager list preserves plugin grouping metadata', () => {
+  const manager = new PluginManager();
+  manager.register(createLayerEffectPlugin({
+    id: 'test.grouped',
+    name: 'Grouped',
+    group: 'Color',
+    tags: ['demo', 'sdk'],
+    apply: (grid) => grid,
+  }));
+
+  const listed = manager.list().find((plugin) => plugin.id === 'test.grouped');
+  assert.equal(listed.group, 'Color');
+  assert.deepEqual(listed.tags, ['demo', 'sdk']);
 });
