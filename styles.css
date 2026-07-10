@@ -630,24 +630,25 @@ input[type="color"] {
   width: min(410px, calc(100vw - 32px));
 }
 
-.image-import-dialog {
-  width: min(760px, calc(100vw - 32px));
-  max-height: calc(100dvh - 32px);
+.classic-dialog.image-import-dialog {
+  width: min(920px, calc(100vw - 48px));
+  height: min(720px, calc(100dvh - 48px));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
 .image-import-layout {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(240px, 280px);
-  align-items: start;
-  gap: 16px;
-  max-height: calc(100dvh - 118px);
-  overflow: auto;
+  grid-template-columns: minmax(360px, 1fr) minmax(300px, 340px);
+  align-items: stretch;
+  gap: 18px;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .image-import-preview-wrap {
-  min-height: 260px;
-  max-height: 420px;
+  min-height: 0;
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -663,8 +664,9 @@ input[type="color"] {
 }
 
 .image-import-preview-wrap img {
-  max-width: 100%;
-  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  display: block;
   object-fit: contain;
   image-rendering: auto;
 }
@@ -1694,10 +1696,11 @@ body.light-theme .layer-settings label {
 
   .image-import-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: minmax(180px, 1fr) auto;
   }
 
   .image-import-preview-wrap {
-    min-height: 150px;
+    min-height: 0;
   }
 }
 
@@ -1878,20 +1881,21 @@ body.light-theme .layer-settings label {
     max-height: calc(100dvh - 16px);
   }
 
-  .image-import-dialog {
+  .classic-dialog.image-import-dialog {
     width: calc(100vw - 16px);
+    height: calc(100dvh - 16px);
   }
 
   .image-import-layout {
     grid-template-columns: 1fr;
-    max-height: calc(100dvh - 112px);
+    grid-template-rows: minmax(170px, 1fr) auto;
+    min-height: 0;
     padding: 10px;
     gap: 10px;
   }
 
   .image-import-preview-wrap {
-    min-height: 180px;
-    max-height: 34dvh;
+    min-height: 0;
   }
 
   .image-import-fields > label:not(.check-row) {
