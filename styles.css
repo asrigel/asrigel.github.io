@@ -631,8 +631,10 @@ input[type="color"] {
 }
 
 .classic-dialog.image-import-dialog {
-  width: min(920px, calc(100vw - 48px));
-  height: min(720px, calc(100dvh - 48px));
+  width: calc(100vw - 16px);
+  height: calc(100dvh - 16px);
+  max-width: 980px;
+  max-height: 920px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
@@ -640,10 +642,12 @@ input[type="color"] {
 
 .image-import-layout {
   display: grid;
-  grid-template-columns: minmax(360px, 1fr) minmax(300px, 340px);
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(220px, 1fr) auto;
   align-items: stretch;
-  gap: 18px;
+  gap: 12px;
   min-height: 0;
+  padding: 12px;
   overflow: hidden;
 }
 
@@ -673,19 +677,25 @@ input[type="color"] {
 
 .image-import-fields {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
-  gap: 9px;
+  gap: 10px 16px;
 }
 
 .image-import-fields > label:not(.check-row) {
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
+  grid-template-columns: 100px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
 }
 
 .image-import-fields .project-size-row {
+  grid-column: 1 / -1;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.image-import-fields .check-row {
+  min-height: 24px;
 }
 
 .image-import-fields .project-size-row input,
@@ -1901,6 +1911,10 @@ body.light-theme .layer-settings label {
   .image-import-fields > label:not(.check-row) {
     grid-template-columns: 1fr;
     align-items: stretch;
+  }
+
+  .image-import-fields {
+    grid-template-columns: 1fr;
   }
 
   .dialog-actions {
