@@ -8,16 +8,22 @@ export class PluginManager {
     this.hotReloadToken = 0;
   }
 
+  apiFor(plugin) {
+    return plugin?.custom || plugin?.type === 'ui' || plugin?.type === 'tool'
+      ? this.publicApi
+      : this.api;
+  }
+
   register(plugin) {
     if (!plugin?.manifest?.id) throw new Error('Plugin manifest.id is required');
     const id = plugin.manifest.id;
     const previous = this.plugins.get(id);
-    if (previous?.destroy) previous.destroy(previous.custom ? this.publicApi : this.api);
+    if (previous?.destroy) previous.destroy(this.apiFor(previous));
     const instance = { ...plugin, enabled: plugin.enabled !== false };
     this.plugins.set(id, instance);
     if (instance.type === 'effect' && !this.effectOrder.includes(id)) this.effectOrder.push(id);
     if (instance.type === 'layer-effect' && !this.layerEffectOrder.includes(id)) this.layerEffectOrder.push(id);
-    instance.setup?.(instance.custom ? this.publicApi : this.api);
+    instance.setup?.(this.apiFor(instance));
     this.api.eventBus?.emit('plugin:registered', instance.manifest);
     return instance;
   }
@@ -25,7 +31,7 @@ export class PluginManager {
   unregister(id) {
     const plugin = this.plugins.get(id);
     if (!plugin) return false;
-    plugin.destroy?.(plugin.custom ? this.publicApi : this.api);
+    plugin.destroy?.(this.apiFor(plugin));
     this.plugins.delete(id);
     this.effectOrder = this.effectOrder.filter((item) => item !== id);
     this.layerEffectOrder = this.layerEffectOrder.filter((item) => item !== id);
@@ -69,7 +75,7 @@ export class PluginManager {
     return this.effectOrder.reduce((current, id) => {
       const plugin = this.plugins.get(id);
       if (!plugin?.enabled || typeof plugin.apply !== 'function') return current;
-      const api = plugin.custom ? this.publicApi : this.api;
+      const api = this.apiFor(plugin);
       return plugin.apply(current, { ...api, ...context }) || current;
     }, grid);
   }
@@ -79,7 +85,7 @@ export class PluginManager {
     if (!plugin || plugin.enabled === false || plugin.type !== 'layer-effect' || typeof plugin.apply !== 'function') {
       return null;
     }
-    const api = plugin.custom ? this.publicApi : this.api;
+    const api = this.apiFor(plugin);
     return plugin.apply(grid, { ...api, ...context }) || grid;
   }
 }

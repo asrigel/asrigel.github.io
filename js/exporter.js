@@ -119,7 +119,13 @@ export class AnsiExporter {
     return new Blob([this.toPlainText()], { type: 'text/plain;charset=utf-8' });
   }
 
-  toColoristaGo() {
+  goIdentifier(value, fallback) {
+    const clean = String(value || '').replace(/[^\p{L}\p{N}_]/gu, '');
+    if (!clean || /^\p{N}/u.test(clean)) return fallback;
+    return clean;
+  }
+
+  toColoristaGo(options = {}) {
     const bounds = this.grid.getContentBounds();
     const styles = [];
     const styleIndexes = new Map();
@@ -175,6 +181,10 @@ export class AnsiExporter {
     }
     const payload = btoa(binaryPayload);
 
+    if (options.mode && options.mode !== 'inline') {
+      return this.toColoristaGoVariant(payload, options);
+    }
+
     const lines = [
       'package art',
       '',
@@ -227,6 +237,91 @@ export class AnsiExporter {
       '',
     ];
     return lines.join('\n');
+  }
+
+  toColoristaGoVariant(payload, options = {}) {
+    const mode = options.mode || 'full';
+    const packageName = this.goIdentifier(options.packageName || 'art', 'art');
+    const variableName = this.goIdentifier(options.variableName || 'ArtBase64', 'ArtBase64');
+    const functionName = this.goIdentifier(options.functionName || 'Render', 'Render');
+    const includePackage = options.includePackage !== false;
+    const imports = [
+      'import (',
+      '\t"encoding/base64"',
+      '\t"encoding/binary"',
+      '\t"strings"',
+      '',
+      '\t"github.com/rp1s/colorista"',
+      ')',
+      '',
+    ];
+    const renderString = [
+      '// RenderString decodes a compact Rigel base64 payload and returns one colored terminal string.',
+      'func RenderString(payload string) string {',
+      '\tc := colorista.NewColorista(colorista.ThemeAuto)',
+      '\t_ = c',
+      '\traw, _ := base64.StdEncoding.DecodeString(payload)',
+      '\toffset := 0',
+      '\treadUint16 := func() uint16 {',
+      '\t\tvalue := binary.BigEndian.Uint16(raw[offset:])',
+      '\t\toffset += 2',
+      '\t\treturn value',
+      '\t}',
+      '\tstyleCount := int(readUint16())',
+      '\ttype renderStyle struct { fg, bg colorista.RGB; flags byte }; styles := make([]renderStyle, styleCount)',
+      '\tfor i := range styles {',
+      '\t\tstyles[i].fg = colorista.RGB{R: raw[offset], G: raw[offset+1], B: raw[offset+2]}',
+      '\t\tstyles[i].bg = colorista.RGB{R: raw[offset+3], G: raw[offset+4], B: raw[offset+5]}',
+      '\t\tstyles[i].flags = raw[offset+6]',
+      '\t\toffset += 7',
+      '\t}',
+      '\tvar out strings.Builder',
+      '\tfor offset < len(raw) {',
+      '\t\tstyleIndex := readUint16()',
+      '\t\tlength := int(readUint16())',
+      '\t\ttext := string(raw[offset : offset+length])',
+      '\t\toffset += length',
+      '\t\tif styleIndex == 0xffff {',
+      '\t\t\tout.WriteString(text)',
+      '\t\t\tcontinue',
+      '\t\t}',
+      '\t\tstyle := styles[int(styleIndex)]',
+      '\t\tswitch style.flags {',
+      '\t\tcase 1: out.WriteString(c.Apply(text, colorista.Rgb(style.fg)))',
+      '\t\tcase 2: out.WriteString(c.Apply(text, colorista.BgRgb(style.bg)))',
+      '\t\tdefault: out.WriteString(c.Apply(text, colorista.Rgb(style.fg), colorista.BgRgb(style.bg)))',
+      '\t\t}',
+      '\t}',
+      '\treturn out.String()',
+      '}',
+      '',
+    ];
+    const header = includePackage ? [`package ${packageName}`, '', ...imports] : [];
+    if (mode === 'base64') {
+      const base64Header = includePackage ? [`package ${packageName}`, ''] : [];
+      return [
+        ...base64Header,
+        `const ${variableName} = "${payload}"`,
+        '',
+      ].join('\n');
+    }
+    if (mode === 'renderer') {
+      return [
+        ...header,
+        ...renderString,
+      ].join('\n');
+    }
+    return [
+      ...header,
+      `const ${variableName} = "${payload}"`,
+      '',
+      `// ${functionName} renders the embedded Rigel artwork.`,
+      `func ${functionName}() string {`,
+      `\treturn RenderString(${variableName})`,
+      '}',
+      '',
+      ...renderString,
+    ].join('\n');
   }
 
   exportGo() {

@@ -4,8 +4,9 @@ import { ANSIGrid } from '../js/grid.js';
 import { BrushEngine } from '../js/brushEngine.js';
 import { AnsiExporter } from '../js/exporter.js';
 import { PluginManager } from '../js/core/pluginManager.js';
-import { createLayerEffectPlugin, createPanelPlugin } from '../js/sdk/rigelPluginSdk.js';
+import { createControlPanelPlugin, createLayerEffectPlugin, createPanelPlugin } from '../js/sdk/rigelPluginSdk.js';
 import { createBuiltinLayerEffectPlugins } from '../js/effects/builtinLayerPlugins.js';
+import { createColorCorrectionPanelPlugin } from '../js/plugins/colorCorrectionPanelPlugin.js';
 
 test('an empty grid exports no whitespace', () => {
   const grid = new ANSIGrid(80, 25);
@@ -96,6 +97,31 @@ test('Go export returns one Colorista Render function with exact RGB styles', ()
 test('empty Go export still marks the Colorista instance as used', () => {
   const source = new AnsiExporter(new ANSIGrid(3, 3)).toColoristaGo();
   assert.match(source, /_ = c/);
+});
+
+test('Go export can generate base64 variable only', () => {
+  const source = new AnsiExporter(new ANSIGrid(3, 3)).toColoristaGo({
+    mode: 'base64',
+    variableName: 'Payload',
+    includePackage: false,
+  });
+
+  assert.match(source, /^const Payload = "/);
+  assert.doesNotMatch(source, /func Render/);
+  assert.doesNotMatch(source, /import \(/);
+});
+
+test('Go export can generate a reusable RenderString function', () => {
+  const source = new AnsiExporter(new ANSIGrid(3, 3)).toColoristaGo({
+    mode: 'full',
+    variableName: 'RigelArt',
+    functionName: 'Draw',
+  });
+
+  assert.match(source, /const RigelArt = "/);
+  assert.match(source, /func Draw\(\) string/);
+  assert.match(source, /func RenderString\(payload string\) string/);
+  assert.match(source, /colorista\.NewColorista\(colorista\.ThemeAuto\)/);
 });
 
 test('Go export stays compact for a fully painted canvas', () => {
@@ -281,6 +307,31 @@ test('plugin SDK creates UI panel plugins with a stable manifest', () => {
   assert.deepEqual(plugin.manifest.tags, []);
   assert.equal(registered.id, 'test.panel');
   assert.equal(registered.title, 'Test Panel');
+  assert.equal(registered.hidden, false);
+});
+
+test('control panel SDK forwards window options and wraps render with UI helpers', () => {
+  const plugin = createControlPanelPlugin({
+    id: 'test.controls',
+    name: 'Controls',
+    hidden: true,
+    width: 320,
+    render: () => null,
+  });
+  let registered = null;
+  plugin.setup({
+    layout: {
+      registerPanel(options) {
+        registered = options;
+      },
+    },
+  });
+
+  assert.equal(plugin.type, 'ui');
+  assert.equal(registered.hidden, true);
+  assert.equal(registered.width, 320);
+  assert.match(registered.className, /plugin-control-panel/);
+  assert.equal(typeof registered.render, 'function');
 });
 
 test('custom plugins receive the public API for setup and layer effects', () => {
@@ -304,6 +355,69 @@ test('custom plugins receive the public API for setup and layer effects', () => 
   manager.applyLayerEffect('test.effect', new ANSIGrid(1, 1));
 
   assert.deepEqual(calls, [{ exposed: true }, { exposed: true }]);
+});
+
+test('ui plugins receive the public layout API even when built in', () => {
+  let registered = null;
+  const manager = new PluginManager({
+    internal: true,
+    publicApi: {
+      layout: {
+        registerPanel(options) {
+          registered = options;
+        },
+      },
+    },
+  });
+
+  manager.register(createControlPanelPlugin({
+    id: 'test.builtin.panel',
+    name: 'Built In Panel',
+    render: () => null,
+  }));
+
+  assert.equal(registered.id, 'test.builtin.panel');
+});
+
+test('panel SDK falls back to api.publicApi.layout for stale internal callers', () => {
+  let registered = null;
+  const plugin = createControlPanelPlugin({
+    id: 'test.fallback.panel',
+    name: 'Fallback Panel',
+    render: () => null,
+  });
+
+  plugin.setup({
+    publicApi: {
+      layout: {
+        registerPanel(options) {
+          registered = options;
+        },
+      },
+    },
+  });
+
+  assert.equal(registered.id, 'test.fallback.panel');
+});
+
+test('built-in layer effects still receive the internal effect API', () => {
+  const calls = [];
+  const manager = new PluginManager({
+    internal: true,
+    publicApi: { exposed: true },
+  });
+  manager.register(createLayerEffectPlugin({
+    id: 'test.internal.effect',
+    name: 'Internal Effect',
+    apply(grid, api) {
+      calls.push(api);
+      return grid;
+    },
+  }));
+
+  manager.applyLayerEffect('test.internal.effect', new ANSIGrid(1, 1));
+
+  assert.equal(calls[0].internal, true);
 });
 
 test('built-in layer plugins expose groups and tags for the plugin manager', () => {
@@ -331,4 +445,13 @@ test('plugin manager list preserves plugin grouping metadata', () => {
   const listed = manager.list().find((plugin) => plugin.id === 'test.grouped');
   assert.equal(listed.group, 'Color');
   assert.deepEqual(listed.tags, ['demo', 'sdk']);
+});
+
+test('color correction panel is a standalone UI plugin file', () => {
+  const plugin = createColorCorrectionPanelPlugin();
+
+  assert.equal(plugin.type, 'ui');
+  assert.equal(plugin.manifest.id, 'rigel.panel.color-correction');
+  assert.equal(plugin.manifest.group, 'Panels');
+  assert.ok(plugin.manifest.tags.includes('correction'));
 });

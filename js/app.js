@@ -1,14 +1,15 @@
-import { ANSIGrid } from './grid.js';
-import { Renderer } from './renderer.js';
-import { BrushEngine } from './brushEngine.js';
-import { AnsiExporter } from './exporter.js';
-import { History } from './history.js';
-import { clamp, hexToRgb, mixColors, rgbToHex } from './utils.js';
-import { EventBus } from './core/eventBus.js';
-import { PluginManager } from './core/pluginManager.js';
-import { ProjectLoader } from './core/projectLoader.js';
-import { createLightingPlugin, lightingAt } from './effects/lightingPlugin.js';
-import { createBuiltinLayerEffectPlugins } from './effects/builtinLayerPlugins.js';
+import { ANSIGrid } from './grid.js?v=20260711-lighting-tab';
+import { Renderer } from './renderer.js?v=20260711-lighting-tab';
+import { BrushEngine } from './brushEngine.js?v=20260711-lighting-tab';
+import { AnsiExporter } from './exporter.js?v=20260711-lighting-tab';
+import { History } from './history.js?v=20260711-lighting-tab';
+import { clamp, hexToRgb, mixColors, rgbToHex } from './utils.js?v=20260711-lighting-tab';
+import { EventBus } from './core/eventBus.js?v=20260711-lighting-tab';
+import { PluginManager } from './core/pluginManager.js?v=20260711-lighting-tab';
+import { ProjectLoader } from './core/projectLoader.js?v=20260711-lighting-tab';
+import { createLightingPlugin, lightingAt } from './effects/lightingPlugin.js?v=20260711-lighting-tab';
+import { createBuiltinLayerEffectPlugins } from './effects/builtinLayerPlugins.js?v=20260711-lighting-tab';
+import { createColorCorrectionPanelPlugin } from './plugins/colorCorrectionPanelPlugin.js?v=20260711-lighting-tab';
 
 const CANVAS_MIN_WIDTH = 8;
 const CANVAS_MIN_HEIGHT = 4;
@@ -20,6 +21,8 @@ class App {
     this.canvas = document.getElementById('editorCanvas');
     this.eventBus = new EventBus();
     this.projectLoader = new ProjectLoader();
+    this.pluginPanels = new Map();
+    this.localProjectStorageWarningShown = false;
     this.grid = new ANSIGrid(80, 25);
     this.layers = [{
       id: crypto.randomUUID?.() || String(Date.now()),
@@ -58,12 +61,14 @@ class App {
         },
         effects: {
           applyLayer: (pluginId) => this.applyPluginLayerEffect(pluginId),
+          transformActiveLayer: (label, transform) => this.transformActiveLayer(label, transform),
           listLayerEffects: () => this.pluginManager.getLayerEffects().map((plugin) => plugin.manifest),
         },
       },
     });
     this.pluginManager.register(createLightingPlugin());
     createBuiltinLayerEffectPlugins().forEach((plugin) => this.pluginManager.register(plugin));
+    this.pluginManager.register(createColorCorrectionPanelPlugin());
     this.brushEngine = new BrushEngine(this.grid);
     this.exporter = new AnsiExporter(this.grid);
     this.history = new History(() => ({
@@ -155,7 +160,6 @@ class App {
     this.lightMarkerFrame = null;
     this.zoomStatusFrame = null;
     this.customPluginSources = this.readCustomPluginSources();
-    this.pluginPanels = new Map();
     this.imageImportNaturalSize = { width: 80, height: 25 };
     this.imageImportAspect = 80 / 25;
 
@@ -323,6 +327,16 @@ class App {
       if (this.imageImportBusy) return;
       if (this.pendingImageImport) this.clearPendingImageImport();
     });
+    this.bindIfExists('imageExportFormat', 'change', () => this.updateImageExportControls());
+    this.bindIfExists('imageExportCompression', 'change', () => this.updateImageExportControls());
+    this.bindIfExists('imageExportQuality', 'input', () => this.updateImageExportControls());
+    this.bindIfExists('applyImageExportBtn', 'click', () => this.applyImageExportDialog());
+    ['goExportMode', 'goExportPackage', 'goExportVariable', 'goExportFunction', 'goExportIncludePackage'].forEach((id) => {
+      this.bindIfExists(id, 'input', () => this.updateGoExportPreview());
+      this.bindIfExists(id, 'change', () => this.updateGoExportPreview());
+    });
+    this.bindIfExists('copyGoExportBtn', 'click', () => this.copyGoExport());
+    this.bindIfExists('downloadGoExportBtn', 'click', () => this.downloadGoExport());
     this.bindIfExists('zoomRange', 'input', (event) => this.setZoom(Number(event.target.value)));
     this.bindIfExists('zoomOutBtn', 'click', () => this.setZoom(this.zoom - 10));
     this.bindIfExists('zoomInBtn', 'click', () => this.setZoom(this.zoom + 10));
@@ -762,10 +776,11 @@ class App {
       'import-text': () => document.getElementById('importInput').click(),
       'export-ans': () => this.downloadFile(this.exporter.exportAns(), 'art.ans'),
       'export-txt': () => this.downloadFile(this.exporter.exportTxt(), 'art.txt'),
-      'export-go': () => this.downloadFile(this.exporter.exportGo(), 'art.go'),
-      'export-image-png': () => this.exportImage('png'),
-      'export-image-jpeg': () => this.exportImage('jpeg'),
-      'export-image-webp': () => this.exportImage('webp'),
+      'export-go': () => this.openGoExportDialog(),
+      'export-image': () => this.openImageExportDialog('png'),
+      'export-image-png': () => this.openImageExportDialog('png'),
+      'export-image-jpeg': () => this.openImageExportDialog('jpeg'),
+      'export-image-webp': () => this.openImageExportDialog('webp'),
       undo: () => this.undo(),
       redo: () => this.redo(),
       'selection-copy': () => this.copySelection(),
@@ -837,6 +852,7 @@ class App {
       'command-palette': () => this.openCommandPalette(),
       plugins: () => this.openPluginManager(),
       'plugin-load': () => document.getElementById('pluginInput').click(),
+      'color-correction-panel': () => this.openPluginPanel('rigel.panel.color-correction'),
     };
 
     actions[action]?.();
@@ -848,7 +864,7 @@ class App {
       ['Открыть проект', 'open', '⌘O'],
       ['Сохранить проект', 'save', '⌘S'],
       ['Импорт изображения', 'import-image', '⇧⌥⌘O'],
-      ['Экспорт PNG', 'export-image-png', '⌥⌘4'],
+      ['Экспорт изображения', 'export-image', '⌥⌘4'],
       ['Карандаш', 'tool:pencil', 'P'],
       ['Ластик', 'tool:eraser', 'E'],
       ['Заливка', 'tool:fill', 'F'],
@@ -858,6 +874,7 @@ class App {
       ['Масштаб', 'tool:zoom', 'Z'],
       ['Освещение', 'lighting', '⌥1'],
       ['3D render / объем', 'effect-3d-render', '⌥R'],
+      ['Color Correction Panel', 'color-correction-panel', ''],
       ['Удалить однотонный фон слоя', 'remove-flat-background', ''],
       ['По размеру листа', 'zoom-fit', '⌘9'],
       ['100%', 'zoom-100', '⌘0'],
@@ -1235,6 +1252,35 @@ class App {
     }
   }
 
+  transformActiveLayer(label, transform) {
+    if (typeof transform !== 'function') return null;
+    try {
+      this.history.capture();
+      const source = this.grid.clone();
+      const result = transform(source, {
+        ANSIGrid,
+        clamp,
+        hexToRgb,
+        mixColors,
+        rgbToHex,
+        selection: this.selection,
+        colors: { fg: this.fgColor, bg: this.bgColor },
+      });
+      if (result) this.setActiveGrid(result);
+      this.touchActiveDocument();
+      this.render();
+      this.persistLocalProject();
+      const status = document.getElementById('statusBar');
+      if (status) status.textContent = `${label || 'Effect'} применён`;
+      return result;
+    } catch (error) {
+      console.error('Panel effect failed', error);
+      const status = document.getElementById('statusBar');
+      if (status) status.textContent = `${label || 'Effect'} упал`;
+      return null;
+    }
+  }
+
   readSavedPalettes() {
     try {
       return JSON.parse(localStorage.getItem('rigel-saved-palettes') || '[]');
@@ -1467,7 +1513,10 @@ class App {
       } catch (storageError) {
         localStorage.removeItem('rigel-project');
         this.saveProjectRecord(project).catch((error) => console.warn('Project database fallback failed', error));
-        console.warn('Local project cache was too large; IndexedDB fallback is used', storageError);
+        if (!this.localProjectStorageWarningShown) {
+          this.localProjectStorageWarningShown = true;
+          console.warn('Local project cache was too large; IndexedDB fallback is used', storageError);
+        }
       }
       this.updateRecentProjects(project);
     } catch (error) {
@@ -3634,6 +3683,11 @@ class App {
 
   openLightingPanel() {
     const panel = document.getElementById('lightingPanel');
+    if (!panel) return;
+    const wasHidden = panel.hidden === true;
+    if (!this.lighting.docked && (wasHidden || (!panel.style.left && !panel.style.top))) {
+      this.dockLightingPanel({ save: false });
+    }
     panel.hidden = false;
     this.updateLightingControls();
     if (!this.lighting.docked && !panel.style.left) {
@@ -3646,21 +3700,35 @@ class App {
 
   toggleLightingDock() {
     const panel = document.getElementById('lightingPanel');
-    this.lighting.docked = !this.lighting.docked;
-    panel.classList.toggle('docked', this.lighting.docked);
-    document.getElementById('dockLightingBtn').textContent = this.lighting.docked ? '↗' : '◆';
-    if (this.lighting.docked) {
-      panel.style.left = '';
-      panel.style.top = '';
-      document.getElementById('rightDock').prepend(panel);
+    if (!panel) return;
+    if (!this.lighting.docked) {
+      this.dockLightingPanel({ save: false });
     } else {
+      this.lighting.docked = false;
+      panel.classList.remove('docked');
       document.body.appendChild(panel);
       panel.style.left = `${Math.max(100, window.innerWidth - 600)}px`;
       panel.style.top = '150px';
+      document.getElementById('dockLightingBtn').textContent = '◆';
     }
     this.attachPanelDrag(panel);
     this.savePanelLayout();
     this.touchActiveDocument();
+  }
+
+  dockLightingPanel({ save = true } = {}) {
+    const panel = document.getElementById('lightingPanel');
+    const dock = document.getElementById('rightDock');
+    if (!panel || !dock) return;
+    this.lighting.docked = true;
+    panel.classList.add('docked');
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.hidden = false;
+    dock.prepend(panel);
+    document.getElementById('dockLightingBtn').textContent = '↗';
+    this.attachPanelDrag(panel);
+    if (save) this.savePanelLayout();
   }
 
   normalizeLightPoint(point = {}) {
@@ -3752,6 +3820,7 @@ class App {
       this.setLightPlacement(false);
     }
     this.updateLightingControls();
+    this.updateLightMarkers();
     this.touchActiveDocument();
     this.render();
   }
@@ -3823,6 +3892,7 @@ class App {
         marker.setPointerCapture(event.pointerId);
         const move = (moveEvent) => {
           const nextPoint = this.getCanvasPoint(moveEvent);
+          if (!nextPoint) return;
           point.x = nextPoint.x;
           point.y = nextPoint.y;
           const nextLeft = (point.x + 0.5) * this.renderer.cellWidth * (this.zoom / 100);
@@ -3836,12 +3906,16 @@ class App {
         const up = () => {
           marker.removeEventListener('pointermove', move);
           marker.removeEventListener('pointerup', up);
+          marker.removeEventListener('pointercancel', up);
+          marker.removeEventListener('lostpointercapture', up);
           this.touchActiveDocument();
           this.render();
           this.scheduleAutosave();
         };
         marker.addEventListener('pointermove', move);
         marker.addEventListener('pointerup', up);
+        marker.addEventListener('pointercancel', up);
+        marker.addEventListener('lostpointercapture', up);
       });
       markerLayer.appendChild(marker);
     });
@@ -3949,12 +4023,15 @@ class App {
     docked = true,
     hidden = false,
     width = 270,
+    className = '',
+    actions: headerActions = [],
     render = null,
   } = {}) {
     if (!id) throw new Error('Panel id is required');
     this.unregisterPluginPanel(id);
     const panel = document.createElement('section');
     panel.className = 'floating-panel plugin-panel';
+    if (className) panel.classList.add(...String(className).split(/\s+/).filter(Boolean));
     panel.dataset.panelId = id;
     panel.dataset.pluginPanel = 'true';
     panel.style.width = `${width}px`;
@@ -3965,12 +4042,23 @@ class App {
     const strong = document.createElement('strong');
     strong.textContent = title;
     const actions = document.createElement('div');
+    headerActions.forEach((action) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'panel-window-button panel-action-button';
+      button.title = action.title || action.label || '';
+      button.textContent = action.label || '?';
+      button.addEventListener('click', () => action.onClick?.({ panel, body, api: this.pluginManager.publicApi }));
+      actions.appendChild(button);
+    });
     const dockButton = document.createElement('button');
     dockButton.type = 'button';
+    dockButton.className = 'panel-window-button panel-dock-button';
     dockButton.title = 'Закрепить / открепить';
-    dockButton.textContent = docked ? '↗' : '◆';
+    dockButton.textContent = docked ? '□' : '_';
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
+    closeButton.className = 'panel-window-button panel-close-button';
     closeButton.title = 'Закрыть';
     closeButton.textContent = '×';
     actions.append(dockButton, closeButton);
@@ -4055,7 +4143,7 @@ class App {
     panel.classList.add('docked');
     panel.style.left = '';
     panel.style.top = '';
-    panel.querySelector('.floating-panel-header button')?.replaceChildren(document.createTextNode('↗'));
+    panel.querySelector('.panel-dock-button')?.replaceChildren(document.createTextNode('_'));
     if (prepend) dock.prepend(panel);
     else dock.appendChild(panel);
     this.attachPanelDrag(panel);
@@ -4069,7 +4157,7 @@ class App {
     document.body.appendChild(panel);
     panel.style.left = left || `${Math.max(80, window.innerWidth - 620)}px`;
     panel.style.top = top || '150px';
-    panel.querySelector('.floating-panel-header button')?.replaceChildren(document.createTextNode('◆'));
+    panel.querySelector('.panel-dock-button')?.replaceChildren(document.createTextNode('□'));
     this.attachFloatingPanelMove(panel);
     if (save) this.savePanelLayout();
   }
@@ -4768,7 +4856,225 @@ class App {
     this.clearPendingImageImport();
   }
 
-  exportImage(format) {
+  openImageExportDialog(format = 'png') {
+    const dialog = document.getElementById('imageExportDialog');
+    const formatSelect = document.getElementById('imageExportFormat');
+    if (!dialog || !formatSelect) {
+      this.exportImage(format);
+      return;
+    }
+    formatSelect.value = format;
+    document.getElementById('imageExportMatte').checked = format === 'jpeg';
+    this.updateImageExportControls();
+    dialog.showModal();
+  }
+
+  goExportOptions() {
+    return {
+      mode: document.getElementById('goExportMode')?.value || 'full',
+      packageName: document.getElementById('goExportPackage')?.value || 'art',
+      variableName: document.getElementById('goExportVariable')?.value || this.defaultGoExportVariableName(),
+      functionName: document.getElementById('goExportFunction')?.value || 'Render',
+      includePackage: document.getElementById('goExportIncludePackage')?.checked !== false,
+    };
+  }
+
+  defaultGoExportVariableName() {
+    const activeDocument = this.documents.find((item) => item.id === this.activeDocumentId);
+    return this.exporter.goIdentifier(activeDocument?.name || '', 'ArtBase64');
+  }
+
+  openGoExportDialog() {
+    const dialog = document.getElementById('goExportDialog');
+    if (!dialog) {
+      this.downloadFile(this.exporter.exportGo(), 'art.go');
+      return;
+    }
+    const variableInput = document.getElementById('goExportVariable');
+    if (variableInput) variableInput.value = this.defaultGoExportVariableName();
+    this.updateGoExportPreview();
+    dialog.showModal();
+  }
+
+  goExportSource() {
+    return this.exporter.toColoristaGo(this.goExportOptions());
+  }
+
+  goExportFilename() {
+    const activeDocument = this.documents.find((item) => item.id === this.activeDocumentId);
+    return `${this.projectName}-${activeDocument?.name || 'art'}.go`;
+  }
+
+  updateGoExportPreview() {
+    const preview = document.getElementById('goExportPreview');
+    const highlighted = document.getElementById('goExportHighlightedPreview');
+    const stats = document.getElementById('goExportCodeStats');
+    const source = this.goExportSource();
+    if (preview) preview.value = source;
+    if (highlighted) {
+      const code = highlighted.querySelector('code') || highlighted;
+      code.innerHTML = this.highlightGoSource(source);
+    }
+    if (stats) {
+      const lines = source ? source.split('\n').length : 0;
+      const bytes = new Blob([source]).size;
+      stats.textContent = `${lines} lines · ${this.formatBytes(bytes)}`;
+    }
+  }
+
+  escapeCodeHtml(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  formatBytes(bytes) {
+    const value = Number(bytes) || 0;
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  highlightGoSource(source) {
+    const keywords = new Set([
+      'break', 'case', 'chan', 'const', 'continue', 'default', 'defer', 'else',
+      'fallthrough', 'for', 'func', 'go', 'goto', 'if', 'import', 'interface',
+      'map', 'package', 'range', 'return', 'select', 'struct', 'switch', 'type', 'var',
+    ]);
+    const types = new Set([
+      'any', 'bool', 'byte', 'complex64', 'complex128', 'error', 'float32', 'float64',
+      'int', 'int8', 'int16', 'int32', 'int64', 'rune', 'string', 'uint', 'uint8',
+      'uint16', 'uint32', 'uint64', 'uintptr',
+    ]);
+    let html = '';
+    let i = 0;
+    const text = String(source || '');
+    const span = (className, value) => `<span class="${className}">${this.escapeCodeHtml(value)}</span>`;
+    const readQuoted = (quote) => {
+      const start = i;
+      i += 1;
+      while (i < text.length) {
+        const char = text[i];
+        if (quote !== '`' && char === '\\') {
+          i += 2;
+          continue;
+        }
+        i += 1;
+        if (char === quote) break;
+      }
+      return text.slice(start, i);
+    };
+    while (i < text.length) {
+      const char = text[i];
+      const next = text[i + 1];
+      if (char === '/' && next === '/') {
+        const start = i;
+        i = text.indexOf('\n', i);
+        if (i === -1) i = text.length;
+        html += span('go-token-comment', text.slice(start, i));
+        continue;
+      }
+      if (char === '/' && next === '*') {
+        const start = i;
+        const end = text.indexOf('*/', i + 2);
+        i = end === -1 ? text.length : end + 2;
+        html += span('go-token-comment', text.slice(start, i));
+        continue;
+      }
+      if (char === '"' || char === '\'' || char === '`') {
+        html += span('go-token-string', readQuoted(char));
+        continue;
+      }
+      if (/[A-Za-z_]/.test(char)) {
+        const start = i;
+        i += 1;
+        while (i < text.length && /[A-Za-z0-9_]/.test(text[i])) i += 1;
+        const word = text.slice(start, i);
+        let j = i;
+        while (j < text.length && /\s/.test(text[j])) j += 1;
+        if (keywords.has(word)) html += span('go-token-keyword', word);
+        else if (types.has(word)) html += span('go-token-type', word);
+        else if (word === 'colorista' || word === 'base64' || word === 'binary' || word === 'strings') html += span('go-token-package', word);
+        else if (text[j] === '(') html += span('go-token-call', word);
+        else html += this.escapeCodeHtml(word);
+        continue;
+      }
+      if (/\d/.test(char)) {
+        const start = i;
+        i += 1;
+        while (i < text.length && /[A-Za-z0-9_.]/.test(text[i])) i += 1;
+        html += span('go-token-number', text.slice(start, i));
+        continue;
+      }
+      html += this.escapeCodeHtml(char);
+      i += 1;
+    }
+    return html;
+  }
+
+  copyGoExport() {
+    this.copyToClipboard(this.goExportSource(), 'Go / Colorista код скопирован');
+  }
+
+  downloadGoExport() {
+    this.downloadFile(new Blob([this.goExportSource()], { type: 'text/x-go;charset=utf-8' }), this.goExportFilename());
+  }
+
+  updateImageExportControls() {
+    const format = document.getElementById('imageExportFormat')?.value || 'png';
+    const compression = document.getElementById('imageExportCompression');
+    const quality = document.getElementById('imageExportQuality');
+    const qualityValue = document.getElementById('imageExportQualityValue');
+    const matte = document.getElementById('imageExportMatte');
+    const compressed = compression?.checked !== false;
+    if (quality) quality.disabled = !compressed;
+    if (qualityValue) qualityValue.textContent = compressed ? `${quality?.value || 86}%` : '100%';
+    if (matte) {
+      matte.disabled = format === 'jpeg';
+      if (format === 'jpeg') matte.checked = true;
+    }
+  }
+
+  applyImageExportDialog() {
+    const format = document.getElementById('imageExportFormat')?.value || 'png';
+    const compress = document.getElementById('imageExportCompression')?.checked !== false;
+    const quality = Number(document.getElementById('imageExportQuality')?.value || 86) / 100;
+    const matte = document.getElementById('imageExportMatte')?.checked === true;
+    this.exportImage(format, { compress, quality, matte });
+    document.getElementById('imageExportDialog')?.close();
+  }
+
+  compressExportCanvas(source, { format, quality, targetWidth, targetHeight }) {
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(targetWidth || source.width));
+    canvas.height = Math.max(1, Math.round(targetHeight || source.height));
+    const ctx = canvas.getContext('2d', { willReadFrequently: format === 'png' });
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+
+    if (format !== 'png') return canvas;
+
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imageData.data;
+    const q = clamp(quality, 0.1, 1);
+    const colorLevels = clamp(Math.round(8 + q * 56), 8, 64);
+    const alphaLevels = clamp(Math.round(4 + q * 12), 4, 16);
+    const quantize = (value, levels) => Math.round(value / (255 / (levels - 1))) * (255 / (levels - 1));
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = quantize(data[i], colorLevels);
+      data[i + 1] = quantize(data[i + 1], colorLevels);
+      data[i + 2] = quantize(data[i + 2], colorLevels);
+      const alpha = data[i + 3];
+      data[i + 3] = alpha < 12 ? 0 : alpha > 243 ? 255 : quantize(alpha, alphaLevels);
+    }
+    ctx.putImageData(imageData, 0, 0);
+    return canvas;
+  }
+
+  exportImage(format, { compress = true, quality = 0.86, matte = false } = {}) {
     const composite = this.applyLighting(this.composeLayers());
     const canvas = document.createElement('canvas');
     const renderer = new Renderer(canvas, composite);
@@ -4779,7 +5085,7 @@ class App {
     renderer.render();
 
     let output = canvas;
-    if (format === 'jpeg') {
+    if (format === 'jpeg' || matte) {
       output = document.createElement('canvas');
       output.width = canvas.width;
       output.height = canvas.height;
@@ -4788,13 +5094,22 @@ class App {
       ctx.fillRect(0, 0, output.width, output.height);
       ctx.drawImage(canvas, 0, 0);
     }
+    if (compress) {
+      output = this.compressExportCanvas(output, {
+        format,
+        quality,
+        targetWidth: renderer.baseWidth,
+        targetHeight: renderer.baseHeight,
+      });
+    }
     const mime = `image/${format}`;
     const extension = format === 'jpeg' ? 'jpg' : format;
     const activeDocument = this.documents.find((item) => item.id === this.activeDocumentId);
     const filename = `${this.projectName}-${activeDocument?.name || 'art'}.${extension}`;
+    const exportQuality = compress && format !== 'png' ? clamp(quality, 0.1, 1) : 1;
     output.toBlob((blob) => {
       if (blob) this.downloadFile(blob, filename);
-    }, mime, format === 'jpeg' ? 0.92 : undefined);
+    }, mime, format === 'png' ? undefined : exportQuality);
   }
 
   serializeProject() {

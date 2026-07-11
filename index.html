@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Rigel ANSI Studio</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260711-lighting-tab" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -65,18 +65,9 @@
                 <div class="menu-separator"></div>
                 <button data-menu-action="export-ans" type="button">ANSI .ans <kbd>⌥⌘1</kbd></button>
                 <button data-menu-action="export-txt" type="button">Текст .txt <kbd>⌥⌘2</kbd></button>
-                <button data-menu-action="export-go" type="button">Go / Colorista .go <kbd>⌥⌘3</kbd></button>
+                <button data-menu-action="export-go" type="button">Go / Colorista... <kbd>⌥⌘3</kbd></button>
                 <div class="menu-separator"></div>
-                <div class="menu-submenu">
-                  <button class="menu-submenu-trigger" type="button" aria-haspopup="true" aria-expanded="false">
-                    <span>Изображение</span><span class="submenu-arrow">▶</span>
-                  </button>
-                  <div class="menu-popup menu-submenu-popup" role="menu">
-                    <button data-menu-action="export-image-png" type="button">PNG с прозрачностью <kbd>⌥⌘4</kbd></button>
-                    <button data-menu-action="export-image-jpeg" type="button">JPEG, фон терминала <kbd>⌥⌘5</kbd></button>
-                    <button data-menu-action="export-image-webp" type="button">WebP с прозрачностью <kbd>⌥⌘6</kbd></button>
-                  </div>
-                </div>
+                <button data-menu-action="export-image" type="button">Изображение... <kbd>⌥⌘4</kbd></button>
               </div>
             </div>
           </div>
@@ -162,6 +153,8 @@
                 <span>Color</span><span class="submenu-arrow">▶</span>
               </button>
               <div class="menu-popup menu-submenu-popup" role="menu">
+                <button data-menu-action="color-correction-panel" type="button">Color Correction Panel...</button>
+                <div class="menu-separator"></div>
                 <button data-menu-action="effect-invert" type="button">Инверсия цветов <kbd>⌥2</kbd></button>
                 <button data-menu-action="effect-grayscale" type="button">Черно-белый <kbd>⌥3</kbd></button>
                 <button data-menu-action="effect-contrast" type="button">Высокий контраст <kbd>⌥4</kbd></button>
@@ -493,8 +486,8 @@
       <header id="lightingPanelHeader" class="floating-panel-header">
         <strong>Освещение</strong>
         <div>
-          <button id="dockLightingBtn" type="button" title="Закрепить">◆</button>
-          <button id="closeLightingBtn" type="button" title="Закрыть">×</button>
+          <button id="dockLightingBtn" class="panel-window-button panel-dock-button" type="button" title="Закрепить">◆</button>
+          <button id="closeLightingBtn" class="panel-window-button panel-close-button" type="button" title="Закрыть">×</button>
         </div>
       </header>
       <div class="floating-panel-body">
@@ -626,6 +619,65 @@
       </div>
     </dialog>
 
+    <dialog id="imageExportDialog" class="classic-dialog image-export-dialog">
+      <div class="dialog-title">Экспорт изображения</div>
+      <div class="dialog-body export-image-fields">
+        <label>Формат
+          <select id="imageExportFormat">
+            <option value="png">PNG</option>
+            <option value="jpeg">JPEG</option>
+            <option value="webp">WebP</option>
+          </select>
+        </label>
+        <label class="check-row"><input id="imageExportCompression" type="checkbox" checked /> Сжатие</label>
+        <div class="image-scale-row">
+          <label>Качество
+            <input id="imageExportQuality" type="range" min="10" max="100" step="1" value="86" />
+          </label>
+          <output id="imageExportQualityValue">86%</output>
+        </div>
+        <label class="check-row"><input id="imageExportMatte" type="checkbox" /> Фон терминала вместо прозрачности</label>
+        <p class="dialog-note">JPEG всегда экспортируется с фоном. Для PNG сжатие уменьшает Retina-масштаб до 1x и упрощает палитру/альфу.</p>
+      </div>
+      <div class="dialog-actions">
+        <button data-dialog-close type="button">Отмена</button>
+        <button id="applyImageExportBtn" type="button">Экспортировать</button>
+      </div>
+    </dialog>
+
+    <dialog id="goExportDialog" class="classic-dialog go-export-dialog">
+      <div class="dialog-title">Экспорт Go / Colorista</div>
+      <div class="dialog-body go-export-layout">
+        <div class="go-export-settings">
+          <label class="go-export-mode-field">Режим
+            <select id="goExportMode">
+              <option value="full">Полный файл: base64 + Render()</option>
+              <option value="base64">Только base64 переменная</option>
+              <option value="renderer">Только функция RenderString(payload)</option>
+            </select>
+          </label>
+          <label>Пакет <input id="goExportPackage" type="text" value="art" /></label>
+          <label>Переменная <input id="goExportVariable" type="text" value="" /></label>
+          <label>Функция <input id="goExportFunction" type="text" value="Render" /></label>
+          <label class="check-row go-export-package-toggle"><input id="goExportIncludePackage" type="checkbox" checked /> package/import</label>
+          <a class="dialog-link go-export-link" href="https://github.com/rp1s/colorista" target="_blank" rel="noreferrer">github.com/rp1s/colorista</a>
+        </div>
+        <div class="go-export-code-panel">
+          <div class="go-export-code-toolbar">
+            <span>preview.go</span>
+            <span id="goExportCodeStats">0 lines</span>
+          </div>
+          <pre id="goExportHighlightedPreview" class="go-export-highlighted-preview" tabindex="0"><code></code></pre>
+          <textarea id="goExportPreview" class="go-export-preview" spellcheck="false" wrap="off" readonly hidden></textarea>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button data-dialog-close type="button">Отмена</button>
+        <button id="copyGoExportBtn" type="button">Скопировать</button>
+        <button id="downloadGoExportBtn" type="button">Файл .go</button>
+      </div>
+    </dialog>
+
     <dialog id="newProjectDialog" class="classic-dialog new-project-dialog">
       <div class="dialog-title">Новый проект</div>
       <div class="dialog-body project-fields">
@@ -685,6 +737,6 @@
       <div class="dialog-actions"><button data-dialog-close type="button">OK</button></div>
     </dialog>
 
-    <script type="module" src="./js/app.js"></script>
+    <script type="module" src="./js/app.js?v=20260711-lighting-tab"></script>
   </body>
 </html>

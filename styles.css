@@ -758,7 +758,8 @@ input[type="color"] {
 
 .command-palette-list {
   max-height: min(420px, calc(100dvh - 170px));
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 6px;
   background: var(--panel);
 }
@@ -910,10 +911,10 @@ input[type="color"] {
 }
 
 .classic-dialog.image-import-dialog {
-  width: calc(100vw - 16px);
-  height: calc(100dvh - 16px);
-  max-width: 980px;
-  max-height: 920px;
+  width: min(860px, calc(100vw - 24px));
+  height: auto;
+  max-width: none;
+  max-height: calc(100dvh - 24px);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
@@ -925,17 +926,21 @@ dialog:not([open]) {
 
 .image-import-layout {
   display: grid;
-  grid-template-columns: 1fr;
-  grid-template-rows: minmax(220px, 1fr) auto;
+  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   align-items: stretch;
-  gap: 12px;
+  gap: 14px;
   min-height: 0;
-  padding: 12px;
-  overflow: hidden;
+  max-height: min(620px, calc(100dvh - 126px));
+  padding: 14px;
+  overflow: auto;
 }
 
 .image-import-preview-wrap {
-  min-height: 0;
+  align-self: start;
+  width: 100%;
+  min-height: 220px;
+  height: min(340px, calc(100dvh - 190px));
   display: grid;
   place-items: center;
   overflow: hidden;
@@ -951,8 +956,8 @@ dialog:not([open]) {
 }
 
 .image-import-preview-wrap img {
-  width: 100%;
-  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   display: block;
   object-fit: contain;
   image-rendering: auto;
@@ -962,7 +967,11 @@ dialog:not([open]) {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-content: start;
-  gap: 10px 16px;
+  gap: 11px 14px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid #101820;
+  background: rgba(9, 13, 18, 0.16);
 }
 
 .image-import-fields > label:not(.check-row) {
@@ -986,6 +995,207 @@ dialog:not([open]) {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
+}
+
+.image-import-dialog .dialog-actions > [data-dialog-close] {
+  grid-column: 2;
+}
+
+#applyImageImportBtn {
+  grid-column: 3;
+}
+
+.image-export-dialog {
+  width: min(430px, calc(100vw - 24px));
+}
+
+.export-image-fields {
+  display: grid;
+  gap: 10px;
+}
+
+.export-image-fields > label:not(.check-row) {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog-note {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.classic-dialog.go-export-dialog {
+  box-sizing: border-box;
+  width: min(1180px, calc(100vw - 32px));
+  max-width: none;
+  max-height: calc(100dvh - 32px);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.go-export-layout {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  gap: 12px;
+  height: min(680px, calc(100dvh - 122px));
+  min-height: 360px;
+  overflow: hidden;
+}
+
+.go-export-settings {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #101820;
+  background: rgba(9, 13, 18, 0.18);
+}
+
+.go-export-settings > label:not(.check-row) {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.go-export-mode-field {
+  grid-column: auto;
+}
+
+.go-export-package-toggle {
+  align-self: start;
+  margin-top: 3px;
+}
+
+.go-export-link {
+  align-self: start;
+  justify-self: start;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.go-export-code-panel {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 28px minmax(0, 1fr);
+  border: 1px solid #0a0f14;
+  background: #171d23;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.08),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.45);
+}
+
+.go-export-code-toolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 9px;
+  border-bottom: 1px solid #080c10;
+  background: #202832;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.go-export-code-toolbar span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.go-export-highlighted-preview {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: #11161c;
+  color: #d7dde4;
+  white-space: pre;
+  tab-size: 2;
+  font: 13px/1.48 "SFMono-Regular", "Consolas", "Liberation Mono", "Courier New", monospace;
+}
+
+.go-export-highlighted-preview code {
+  display: block;
+  min-width: max-content;
+}
+
+.go-export-preview {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 390px;
+  max-height: min(54vh, 560px);
+  overflow: auto;
+  resize: vertical;
+  white-space: pre;
+  overflow-wrap: normal;
+  tab-size: 2;
+  font: 12px/1.35 "Courier New", monospace;
+}
+
+.go-token-keyword {
+  color: #7db7ff;
+  font-weight: 700;
+}
+
+.go-token-string {
+  color: #d6b56d;
+}
+
+.go-token-comment {
+  color: #7d8b97;
+  font-style: italic;
+}
+
+.go-token-number {
+  color: #9dd986;
+}
+
+.go-token-type {
+  color: #8fd3d1;
+}
+
+.go-token-call {
+  color: #d9e58a;
+}
+
+.go-token-package {
+  color: #bba5ff;
+}
+
+.dialog-link {
+  color: #9ccfff;
+}
+
+@media (max-width: 980px) {
+  .classic-dialog.go-export-dialog {
+    width: min(760px, calc(100vw - 24px));
+  }
+
+  .go-export-layout {
+    grid-template-columns: 1fr;
+    height: min(620px, calc(100dvh - 122px));
+    min-height: 0;
+  }
+
+  .go-export-code-panel {
+    min-height: 0;
+  }
 }
 
 .image-import-progress {
@@ -1153,6 +1363,7 @@ dialog:not([open]) {
   position: relative;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   padding: 18px 0 0 18px;
 }
 
@@ -1183,7 +1394,9 @@ dialog:not([open]) {
 .canvas-scroll {
   width: 100%;
   height: 100%;
+  min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   background-color: #14191e;
   background-image:
     linear-gradient(45deg, #1a2026 25%, transparent 25%),
@@ -1200,7 +1413,7 @@ dialog:not([open]) {
   min-height: 100%;
   display: grid;
   place-items: center;
-  padding: 32px;
+  padding: 32px 32px 96px;
 }
 
 .canvas-frame {
@@ -1338,6 +1551,7 @@ canvas.selection-dragging {
 }
 
 .right-dock {
+  min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -1345,7 +1559,13 @@ canvas.selection-dragging {
   padding: 6px;
   border-left: 1px solid #080b0f;
   background: #1b2027;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.right-dock > * {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .dock-panel {
@@ -1515,7 +1735,7 @@ canvas.selection-dragging {
 
 .layer-settings {
   display: grid;
-  grid-template-columns: 1fr 40px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 5px;
   padding: 7px;
@@ -1524,10 +1744,16 @@ canvas.selection-dragging {
 
 .layer-settings label {
   display: grid;
-  grid-template-columns: auto 1fr;
-  align-items: center;
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 4px;
+  min-width: 0;
   color: var(--muted);
+}
+
+.layer-settings output {
+  width: 38px;
+  text-align: right;
 }
 
 .layer-list {
@@ -1663,6 +1889,36 @@ canvas.selection-dragging {
   line-height: 1.25;
 }
 
+#lightingPanel.docked {
+  border: 1px solid #0a0d11;
+  background: #262d35;
+}
+
+#lightingPanel.docked .floating-panel-header {
+  cursor: grab;
+}
+
+#lightingPanel.docked .floating-panel-body {
+  gap: 8px;
+  padding: 8px;
+}
+
+#lightingPanel.docked .floating-panel-body label:not(.check-row) {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  gap: 4px;
+}
+
+#lightingPanel.docked .floating-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+#lightingPanel.docked .selected-light-controls {
+  padding: 7px;
+  background: #1d252e;
+}
+
 .floating-panel {
   position: fixed;
   z-index: 100;
@@ -1678,30 +1934,55 @@ canvas.selection-dragging {
 
 .floating-panel.docked {
   position: static;
-  width: auto;
+  width: 100% !important;
+  min-width: 0;
+  max-width: 100%;
   flex: 0 0 auto;
   box-shadow: none;
+  overflow: hidden;
 }
 
 .floating-panel-header {
-  height: 25px;
+  min-height: 25px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 6px;
   padding-left: 7px;
   background: #344a62;
   cursor: move;
 }
 
+.floating-panel-header strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .floating-panel-header div {
   display: flex;
   height: 100%;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
-.floating-panel-header button {
-  width: 25px;
+.floating-panel-header .panel-window-button {
+  width: 24px;
+  min-width: 24px;
+  height: 25px;
   padding: 0;
   border-width: 0 0 0 1px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.floating-panel-header .panel-close-button {
+  color: #ffffff;
+}
+
+.floating-panel.docked .panel-dock-button {
+  font-size: 14px;
 }
 
 .floating-panel-body {
@@ -1725,6 +2006,73 @@ canvas.selection-dragging {
 .plugin-stack p {
   margin: 0;
   color: var(--text-muted);
+}
+
+.plugin-control-panel {
+  min-width: 300px;
+}
+
+.plugin-control-panel.docked {
+  min-width: 0;
+}
+
+.plugin-control-panel .floating-panel-body {
+  gap: 10px;
+}
+
+.plugin-control-section {
+  display: grid;
+  gap: 7px;
+  padding: 7px;
+  border: 1px solid #111820;
+  background: rgba(8, 12, 16, 0.22);
+}
+
+.plugin-control-title {
+  color: var(--text-strong);
+}
+
+.floating-panel-body .plugin-control-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.plugin-control-panel.docked .floating-panel-body .plugin-control-row {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+
+.plugin-control-label {
+  color: var(--text-muted);
+}
+
+.plugin-slider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  gap: 7px;
+  align-items: center;
+}
+
+.plugin-control-panel.docked .plugin-slider {
+  grid-template-columns: minmax(0, 1fr) 34px;
+}
+
+.plugin-slider output {
+  text-align: right;
+  color: var(--text-muted);
+}
+
+.plugin-control-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plugin-control-group button {
+  min-width: 72px;
+  flex: 1 1 72px;
 }
 
 .check-row {
@@ -2071,11 +2419,12 @@ body.light-theme .layer-settings label {
 
   .image-import-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(180px, 1fr) auto;
+    grid-template-rows: auto auto;
   }
 
   .image-import-preview-wrap {
-    min-height: 0;
+    min-height: 180px;
+    height: 240px;
   }
 }
 
@@ -2261,16 +2610,30 @@ body.light-theme .layer-settings label {
     height: calc(100dvh - 16px);
   }
 
+  .classic-dialog.go-export-dialog {
+    width: calc(100vw - 16px);
+  }
+
+  .go-export-settings {
+    grid-template-columns: 1fr;
+  }
+
+  .go-export-preview {
+    min-height: 260px;
+    max-height: 42dvh;
+  }
+
   .image-import-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(170px, 1fr) auto;
+    grid-template-rows: auto auto;
     min-height: 0;
     padding: 10px;
     gap: 10px;
   }
 
   .image-import-preview-wrap {
-    min-height: 0;
+    min-height: 160px;
+    height: 200px;
   }
 
   .image-import-fields > label:not(.check-row) {
@@ -2290,7 +2653,7 @@ body.light-theme .layer-settings label {
   }
 
   .image-import-dialog .dialog-actions {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
   .image-import-progress {
