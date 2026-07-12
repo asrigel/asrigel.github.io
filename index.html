@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Rigel ANSI Studio</title>
-    <link rel="stylesheet" href="./styles.css?v=20260711-lighting-tab" />
+    <link rel="stylesheet" href="./styles.css?v=20260711-text-export-dialog" />
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -645,6 +645,40 @@
       </div>
     </dialog>
 
+    <dialog id="textExportDialog" class="classic-dialog go-export-dialog text-export-dialog">
+      <div class="dialog-title">Экспорт ANSI / TXT</div>
+      <div class="dialog-body go-export-layout text-export-layout">
+        <div class="go-export-settings">
+          <label>Формат
+            <select id="textExportFormat">
+              <option value="ansi">ANSI .ans</option>
+              <option value="txt">Текст .txt</option>
+            </select>
+          </label>
+          <label>Строки
+            <select id="textExportLineEndings">
+              <option value="lf">LF</option>
+              <option value="crlf">CRLF</option>
+            </select>
+          </label>
+          <p class="dialog-note">Экспорт обрезает пустые края и сохраняет относительное смещение рисунка.</p>
+          <p id="textExportFormatNote" class="dialog-note">ANSI сохраняет цветовые escape-коды терминала.</p>
+        </div>
+        <div class="go-export-code-panel">
+          <div class="go-export-code-toolbar">
+            <span id="textExportPreviewName">preview.ans</span>
+            <span id="textExportCodeStats">0 lines</span>
+          </div>
+          <pre id="textExportPreview" class="go-export-highlighted-preview text-export-preview" tabindex="0"></pre>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button data-dialog-close type="button">Отмена</button>
+        <button id="copyTextExportBtn" type="button">Скопировать</button>
+        <button id="downloadTextExportBtn" type="button">Файл</button>
+      </div>
+    </dialog>
+
     <dialog id="goExportDialog" class="classic-dialog go-export-dialog">
       <div class="dialog-title">Экспорт Go / Colorista</div>
       <div class="dialog-body go-export-layout">
@@ -712,18 +746,15 @@
       </div>
     </dialog>
 
-    <dialog id="shortcutsDialog" class="classic-dialog">
+    <dialog id="shortcutsDialog" class="classic-dialog shortcuts-dialog">
       <div class="dialog-title">Горячие клавиши</div>
-      <div class="dialog-body shortcut-list">
-        <span>Отменить / повторить</span><kbd>⌘Z / ⇧⌘Z</kbd>
-        <span>Открыть / сохранить</span><kbd>⌘O / ⌘S</kbd>
-        <span>Инструменты</span><kbd>P V M A W ⇧W E F I L R G O S T H Z</kbd>
-        <span>Знак / фон без цвета</span><kbd>Q / ⇧Q</kbd>
-        <span>Слои</span><kbd>⇧⌘N · ⌘J · ⌥[ ]</kbd>
-        <span>Эффекты</span><kbd>⌥1…0 · ⌥- · ⌥R · ⌥E</kbd>
-        <span>Панели / индикаторы</span><kbd>F6 / F7 / F9</kbd>
-        <span>Размер кисти / масштаб</span><kbd>[ ] / − + / ⌘9</kbd>
-        <span>Поменять / сбросить цвета</span><kbd>X / D</kbd>
+      <div class="dialog-body shortcut-editor">
+        <div class="shortcut-editor-toolbar">
+          <input id="shortcutSearch" type="search" placeholder="Команда..." autocomplete="off" />
+          <button id="resetShortcutsBtn" type="button">Сбросить</button>
+        </div>
+        <div id="shortcutEditorList" class="shortcut-editor-list"></div>
+        <p class="dialog-note">Нажмите поле справа и введите сочетание. Backspace очищает назначение.</p>
       </div>
       <div class="dialog-actions"><button data-dialog-close type="button">OK</button></div>
     </dialog>
@@ -737,6 +768,6 @@
       <div class="dialog-actions"><button data-dialog-close type="button">OK</button></div>
     </dialog>
 
-    <script type="module" src="./js/app.js?v=20260711-lighting-tab"></script>
+    <script type="module" src="./js/app.js?v=20260711-text-export-dialog"></script>
   </body>
 </html>

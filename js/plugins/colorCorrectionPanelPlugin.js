@@ -1,4 +1,4 @@
-import { createControlPanelPlugin } from '../sdk/rigelPluginSdk.js?v=20260711-lighting-tab';
+import { createControlPanelPlugin } from '../sdk/rigelPluginSdk.js?v=20260711-text-export-dialog';
 
 const defaults = {
   brightness: 0,

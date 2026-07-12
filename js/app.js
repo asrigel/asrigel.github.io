@@ -1,15 +1,15 @@
-import { ANSIGrid } from './grid.js?v=20260711-lighting-tab';
-import { Renderer } from './renderer.js?v=20260711-lighting-tab';
-import { BrushEngine } from './brushEngine.js?v=20260711-lighting-tab';
-import { AnsiExporter } from './exporter.js?v=20260711-lighting-tab';
-import { History } from './history.js?v=20260711-lighting-tab';
-import { clamp, hexToRgb, mixColors, rgbToHex } from './utils.js?v=20260711-lighting-tab';
-import { EventBus } from './core/eventBus.js?v=20260711-lighting-tab';
-import { PluginManager } from './core/pluginManager.js?v=20260711-lighting-tab';
-import { ProjectLoader } from './core/projectLoader.js?v=20260711-lighting-tab';
-import { createLightingPlugin, lightingAt } from './effects/lightingPlugin.js?v=20260711-lighting-tab';
-import { createBuiltinLayerEffectPlugins } from './effects/builtinLayerPlugins.js?v=20260711-lighting-tab';
-import { createColorCorrectionPanelPlugin } from './plugins/colorCorrectionPanelPlugin.js?v=20260711-lighting-tab';
+import { ANSIGrid } from './grid.js?v=20260711-text-export-dialog';
+import { Renderer } from './renderer.js?v=20260711-text-export-dialog';
+import { BrushEngine } from './brushEngine.js?v=20260711-text-export-dialog';
+import { AnsiExporter } from './exporter.js?v=20260711-text-export-dialog';
+import { History } from './history.js?v=20260711-text-export-dialog';
+import { clamp, hexToRgb, mixColors, rgbToHex } from './utils.js?v=20260711-text-export-dialog';
+import { EventBus } from './core/eventBus.js?v=20260711-text-export-dialog';
+import { PluginManager } from './core/pluginManager.js?v=20260711-text-export-dialog';
+import { ProjectLoader } from './core/projectLoader.js?v=20260711-text-export-dialog';
+import { createLightingPlugin, lightingAt } from './effects/lightingPlugin.js?v=20260711-text-export-dialog';
+import { createBuiltinLayerEffectPlugins } from './effects/builtinLayerPlugins.js?v=20260711-text-export-dialog';
+import { createColorCorrectionPanelPlugin } from './plugins/colorCorrectionPanelPlugin.js?v=20260711-text-export-dialog';
 
 const CANVAS_MIN_WIDTH = 8;
 const CANVAS_MIN_HEIGHT = 4;
@@ -23,6 +23,7 @@ class App {
     this.projectLoader = new ProjectLoader();
     this.pluginPanels = new Map();
     this.localProjectStorageWarningShown = false;
+    this.recentPreviewCache = { image: null, time: 0 };
     this.grid = new ANSIGrid(80, 25);
     this.layers = [{
       id: crypto.randomUUID?.() || String(Date.now()),
@@ -151,6 +152,9 @@ class App {
     this.savedPalettes = this.readSavedPalettes();
     this.palette = [...this.classicPalette];
     this.uiTheme = localStorage.getItem('rigel-ui-theme') === 'light' ? 'light' : 'dark';
+    this.customShortcuts = this.readCustomShortcuts();
+    this.shortcutIndex = this.buildShortcutIndex();
+    this.preferIndexedProjectStore = localStorage.getItem('rigel-prefer-indexed-project-store') === 'true';
     this.autosaveReady = false;
     this.autosaveTimer = null;
     this.renderScheduled = false;
@@ -282,8 +286,8 @@ class App {
     this.bindIfExists('randomTextureBtn', 'click', () => this.generateRandomTexture());
     this.bindIfExists('copyAnsiBtn', 'click', () => this.copyToClipboard(this.exporter.toAnsiText(), 'ANSI скопирован'));
     this.bindIfExists('copyAsciiBtn', 'click', () => this.copyToClipboard(this.exporter.toPlainText(), 'Текст скопирован'));
-    this.bindIfExists('exportAnsBtn', 'click', () => this.downloadFile(this.exporter.exportAns(), 'art.ans'));
-    this.bindIfExists('exportTxtBtn', 'click', () => this.downloadFile(this.exporter.exportTxt(), 'art.txt'));
+    this.bindIfExists('exportAnsBtn', 'click', () => this.openTextExportDialog('ansi'));
+    this.bindIfExists('exportTxtBtn', 'click', () => this.openTextExportDialog('txt'));
     this.bindIfExists('importInput', 'change', (event) => this.importFile(event.target.files?.[0]));
     this.bindIfExists('projectInput', 'change', (event) => this.loadProjectFile(event.target.files?.[0]));
     this.bindIfExists('imageInput', 'change', (event) => this.importImage(event.target.files?.[0]));
@@ -293,6 +297,18 @@ class App {
     this.bindIfExists('cancelProjectLoadBtn', 'click', () => this.cancelProjectLoad());
     this.bindIfExists('commandPaletteInput', 'input', () => this.renderCommandPalette());
     this.bindIfExists('commandPaletteInput', 'keydown', (event) => this.onCommandPaletteKeydown(event));
+    this.bindIfExists('shortcutSearch', 'input', () => this.renderShortcutEditor());
+    this.bindIfExists('resetShortcutsBtn', 'click', () => {
+      this.customShortcuts = {};
+      this.shortcutIndex = this.buildShortcutIndex();
+      localStorage.removeItem('rigel-custom-shortcuts');
+      this.renderShortcutEditor();
+      this.renderCommandPalette();
+    });
+    document.getElementById('shortcutsDialog')?.addEventListener('close', () => {
+      const input = document.getElementById('shortcutSearch');
+      if (input) input.value = '';
+    });
     document.getElementById('commandPaletteDialog')?.addEventListener('close', () => {
       const input = document.getElementById('commandPaletteInput');
       if (input) input.value = '';
@@ -331,6 +347,10 @@ class App {
     this.bindIfExists('imageExportCompression', 'change', () => this.updateImageExportControls());
     this.bindIfExists('imageExportQuality', 'input', () => this.updateImageExportControls());
     this.bindIfExists('applyImageExportBtn', 'click', () => this.applyImageExportDialog());
+    this.bindIfExists('textExportFormat', 'change', () => this.updateTextExportPreview());
+    this.bindIfExists('textExportLineEndings', 'change', () => this.updateTextExportPreview());
+    this.bindIfExists('copyTextExportBtn', 'click', () => this.copyTextExport());
+    this.bindIfExists('downloadTextExportBtn', 'click', () => this.downloadTextExport());
     ['goExportMode', 'goExportPackage', 'goExportVariable', 'goExportFunction', 'goExportIncludePackage'].forEach((id) => {
       this.bindIfExists(id, 'input', () => this.updateGoExportPreview());
       this.bindIfExists(id, 'change', () => this.updateGoExportPreview());
@@ -367,10 +387,7 @@ class App {
 
     this.bindMenus();
 
-    window.addEventListener('keydown', (event) => {
-      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(event.target.tagName)) return;
-      this.handleShortcut(event);
-    });
+    window.addEventListener('keydown', (event) => this.handleShortcut(event));
     window.addEventListener('resize', () => {
       if (this.zoomMode === 'fit') this.fitZoomToView();
     });
@@ -517,7 +534,191 @@ class App {
     output.textContent = `${character} ${Math.round(this.brushLevel * 100)}%`;
   }
 
+  defaultShortcutItems() {
+    return [
+      ['Новый проект', 'new', 'Mod+KeyN'],
+      ['Открыть проект', 'open', 'Mod+KeyO'],
+      ['Сохранить проект', 'save', 'Mod+KeyS'],
+      ['Командная палитра', 'command-palette', 'Mod+Shift+KeyP'],
+      ['Горячие клавиши', 'shortcuts', 'F1'],
+      ['Показать инструменты', 'toggle-tools', 'F6'],
+      ['Показать инспектор', 'toggle-inspector', 'F7'],
+      ['Светлая / темная тема', 'toggle-theme', 'F8'],
+      ['Показать индикаторы', 'toggle-indicators', 'F9'],
+      ['Освещение', 'lighting', 'Alt+Digit1'],
+      ['3D render / объем', 'effect-3d-render', 'Alt+KeyR'],
+      ['Canvas size', 'canvas-size', 'Mod+Alt+KeyC'],
+      ['Импорт текста', 'import-text', 'Mod+Alt+KeyO'],
+      ['Импорт изображения', 'import-image', 'Mod+Alt+Shift+KeyO'],
+      ['Экспорт ANSI', 'export-ans', 'Mod+Alt+Digit1'],
+      ['Экспорт TXT', 'export-txt', 'Mod+Alt+Digit2'],
+      ['Экспорт Go', 'export-go', 'Mod+Alt+Digit3'],
+      ['Экспорт изображения', 'export-image', 'Mod+Alt+Digit4'],
+      ['Отменить', 'undo', 'Mod+KeyZ'],
+      ['Повторить', 'redo', 'Mod+Shift+KeyZ'],
+      ['Повторить', 'redo', 'Mod+KeyY'],
+      ['Копировать', 'selection-copy', 'Mod+KeyC'],
+      ['Вырезать', 'selection-cut', 'Mod+KeyX'],
+      ['Вставить', 'selection-paste', 'Mod+KeyV'],
+      ['Снять выделение', 'selection-clear', 'Mod+KeyD'],
+      ['Выделить все', 'selection-all', 'Mod+KeyA'],
+      ['Новый слой', 'layer-new', 'Mod+Shift+KeyN'],
+      ['Дублировать слой', 'layer-duplicate', 'Mod+KeyJ'],
+      ['Копировать слой', 'layer-copy', 'Mod+Shift+KeyC'],
+      ['Вставить слой', 'layer-paste', 'Mod+Shift+KeyV'],
+      ['Слой выше', 'layer-up', 'Alt+BracketRight'],
+      ['Слой ниже', 'layer-down', 'Alt+BracketLeft'],
+      ['Масштаб 50%', 'zoom-50', 'Mod+Digit5'],
+      ['Масштаб 100%', 'zoom-100', 'Mod+Digit0'],
+      ['Масштаб 150%', 'zoom-150', 'Mod+Digit1'],
+      ['По размеру листа', 'zoom-fit', 'Mod+Digit9'],
+      ['Карандаш', 'tool:pencil', 'KeyP'],
+      ['Курсор / перемещение', 'tool:move', 'KeyV'],
+      ['Прямоугольное выделение', 'tool:select-rect', 'KeyM'],
+      ['Лассо', 'tool:lasso', 'KeyA'],
+      ['Магическое выделение', 'tool:magic-select', 'KeyW'],
+      ['Магический карандаш', 'tool:magic-pencil', 'Shift+KeyW'],
+      ['Ластик', 'tool:eraser', 'KeyE'],
+      ['Заливка', 'tool:fill', 'KeyF'],
+      ['Пипетка', 'tool:eyedropper', 'KeyI'],
+      ['Линия', 'tool:line', 'KeyL'],
+      ['Прямоугольник', 'tool:rect', 'KeyR'],
+      ['Залитый прямоугольник', 'tool:rect-fill', 'KeyG'],
+      ['Эллипс', 'tool:ellipse', 'KeyO'],
+      ['Спрей', 'tool:spray', 'KeyS'],
+      ['Текст', 'tool:text', 'KeyT'],
+      ['Рука', 'tool:pan', 'KeyH'],
+      ['Масштаб', 'tool:zoom', 'KeyZ'],
+      ['Прозрачный знак', 'transparent-fg', 'KeyQ'],
+      ['Прозрачный фон', 'transparent-bg', 'Shift+KeyQ'],
+      ['Поменять цвета', 'swap-colors', 'KeyX'],
+      ['Сбросить цвета', 'reset-colors', 'KeyD'],
+      ['Кисть меньше', 'brush-smaller', 'BracketLeft'],
+      ['Кисть больше', 'brush-larger', 'BracketRight'],
+      ['Zoom out', 'zoom-out-step', 'Minus'],
+      ['Zoom in', 'zoom-in-step', 'Equal'],
+      ['Удалить выделение', 'selection-delete', 'Delete'],
+    ].map(([label, action, shortcut]) => ({
+      label,
+      action,
+      shortcut: this.shortcutForAction(action, this.defaultShortcutItems().find((item) => item.action === action)?.shortcut || shortcut),
+    }));
+  }
+
+  readCustomShortcuts() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('rigel-custom-shortcuts') || '{}');
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  saveCustomShortcuts() {
+    localStorage.setItem('rigel-custom-shortcuts', JSON.stringify(this.customShortcuts));
+  }
+
+  shortcutFromEvent(event) {
+    const parts = [];
+    if (event.ctrlKey || event.metaKey) parts.push('Mod');
+    if (event.altKey) parts.push('Alt');
+    if (event.shiftKey) parts.push('Shift');
+    parts.push(event.code || event.key);
+    return parts.join('+');
+  }
+
+  formatShortcut(shortcut) {
+    if (!shortcut) return '—';
+    const names = {
+      Mod: navigator.platform.toLowerCase().includes('mac') ? '⌘' : 'Ctrl',
+      Alt: navigator.platform.toLowerCase().includes('mac') ? '⌥' : 'Alt',
+      Shift: '⇧',
+      Digit0: '0',
+      Digit1: '1',
+      Digit2: '2',
+      Digit3: '3',
+      Digit4: '4',
+      Digit5: '5',
+      Digit6: '6',
+      Digit7: '7',
+      Digit8: '8',
+      Digit9: '9',
+      BracketLeft: '[',
+      BracketRight: ']',
+      Minus: '−',
+      Equal: '+',
+      Delete: 'Delete',
+      Backspace: 'Backspace',
+      Space: 'Space',
+    };
+    return shortcut.split('+').map((part) => names[part] || part.replace(/^Key/, '')).join('');
+  }
+
+  buildShortcutIndex() {
+    const index = new Map();
+    this.defaultShortcutItems().forEach((item) => {
+      const shortcut = this.customShortcuts[item.action] ?? item.shortcut;
+      if (shortcut) index.set(shortcut, item.action);
+    });
+    return index;
+  }
+
+  shortcutWasCustomizedAway(shortcut) {
+    return this.defaultShortcutItems().some((item) => (
+      item.shortcut === shortcut
+      && Object.prototype.hasOwnProperty.call(this.customShortcuts, item.action)
+      && this.customShortcuts[item.action] !== shortcut
+    ));
+  }
+
+  isEditableTarget(target) {
+    return ['INPUT', 'SELECT', 'TEXTAREA'].includes(target?.tagName) || target?.isContentEditable;
+  }
+
+  shortcutCanRunFromEditable(shortcut) {
+    return shortcut.startsWith('Mod+') || shortcut.startsWith('Alt+') || /^F\d+$/.test(shortcut);
+  }
+
+  executeShortcutAction(action, event = null) {
+    if (action?.startsWith('tool:')) {
+      this.selectTool(action.slice(5));
+      return;
+    }
+    const direct = {
+      undo: () => this.undo(),
+      redo: () => this.redo(),
+      'selection-copy': () => {
+        if (!this.copySelection()) this.copyToClipboard(this.exporter.toAnsiText(), 'ANSI скопирован');
+      },
+      'selection-cut': () => this.cutSelection(),
+      'selection-paste': () => this.pasteSelection(),
+      'brush-smaller': () => this.setBrushSize(this.brushSize - 1),
+      'brush-larger': () => this.setBrushSize(this.brushSize + 1),
+      'zoom-out-step': () => this.setZoom(this.zoom - 10),
+      'zoom-in-step': () => this.setZoom(this.zoom + 10),
+      'selection-delete': () => {
+        if (event?.shiftKey) this.clearCanvas();
+        else this.deleteSelection();
+      },
+    };
+    if (direct[action]) direct[action]();
+    else this.runMenuAction(action);
+  }
+
   handleShortcut(event) {
+    const editable = this.isEditableTarget(event.target);
+    const shortcut = this.shortcutFromEvent(event);
+    const customAction = this.shortcutIndex.get(shortcut);
+    if (customAction && (!editable || this.shortcutCanRunFromEditable(shortcut))) {
+      event.preventDefault();
+      this.executeShortcutAction(customAction, event);
+      return;
+    }
+    if (this.shortcutWasCustomizedAway(shortcut) && (!editable || this.shortcutCanRunFromEditable(shortcut))) {
+      event.preventDefault();
+      return;
+    }
+    if (editable && !this.shortcutCanRunFromEditable(shortcut) && event.key !== 'Escape') return;
     const key = event.key.toLowerCase();
     const command = event.ctrlKey || event.metaKey;
     const run = (action) => {
@@ -774,8 +975,8 @@ class App {
       open: () => document.getElementById('projectInput').click(),
       save: () => this.downloadProject(),
       'import-text': () => document.getElementById('importInput').click(),
-      'export-ans': () => this.downloadFile(this.exporter.exportAns(), 'art.ans'),
-      'export-txt': () => this.downloadFile(this.exporter.exportTxt(), 'art.txt'),
+      'export-ans': () => this.openTextExportDialog('ansi'),
+      'export-txt': () => this.openTextExportDialog('txt'),
       'export-go': () => this.openGoExportDialog(),
       'export-image': () => this.openImageExportDialog('png'),
       'export-image-png': () => this.openImageExportDialog('png'),
@@ -847,7 +1048,7 @@ class App {
       },
       'palette-manager': () => document.getElementById('palettePreset').focus(),
       'save-palette': () => document.getElementById('savePalette').click(),
-      shortcuts: () => document.getElementById('shortcutsDialog').showModal(),
+      shortcuts: () => this.openShortcutsDialog(),
       about: () => document.getElementById('aboutDialog').showModal(),
       'command-palette': () => this.openCommandPalette(),
       plugins: () => this.openPluginManager(),
@@ -893,6 +1094,75 @@ class App {
     return [...baseItems, ...pluginItems];
   }
 
+  shortcutForAction(action, fallback = '') {
+    return this.customShortcuts[action] ?? fallback;
+  }
+
+  renderShortcutEditor() {
+    const list = document.getElementById('shortcutEditorList');
+    const search = document.getElementById('shortcutSearch');
+    if (!list) return;
+    const query = (search?.value || '').trim().toLowerCase();
+    const items = this.defaultShortcutItems()
+      .filter((item, index, source) => source.findIndex((candidate) => candidate.action === item.action) === index)
+      .filter((item) => !query || item.label.toLowerCase().includes(query) || item.action.toLowerCase().includes(query));
+    const shortcutOwners = new Map();
+    items.forEach((item) => {
+      const shortcut = this.shortcutForAction(item.action, item.shortcut);
+      if (!shortcut) return;
+      const owners = shortcutOwners.get(shortcut) || [];
+      owners.push(item.action);
+      shortcutOwners.set(shortcut, owners);
+    });
+    list.innerHTML = '';
+    items.forEach((item) => {
+      const shortcut = this.shortcutForAction(item.action, item.shortcut);
+      const row = document.createElement('div');
+      row.className = 'shortcut-editor-row';
+      const label = document.createElement('span');
+      label.textContent = item.label;
+      const input = document.createElement('button');
+      input.type = 'button';
+      input.className = 'shortcut-capture';
+      input.dataset.action = item.action;
+      input.textContent = this.formatShortcut(shortcut);
+      input.title = 'Нажмите и введите новое сочетание. Backspace очищает.';
+      if ((shortcutOwners.get(shortcut) || []).length > 1) input.classList.add('conflict');
+      input.addEventListener('click', () => {
+        input.classList.add('recording');
+        input.textContent = 'Нажмите клавиши...';
+        input.focus();
+      });
+      input.addEventListener('keydown', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.key === 'Escape') {
+          input.classList.remove('recording');
+          input.textContent = this.formatShortcut(this.shortcutForAction(item.action, item.shortcut));
+          return;
+        }
+        if (event.key === 'Backspace' || event.key === 'Delete') {
+          this.customShortcuts[item.action] = '';
+        } else {
+          this.customShortcuts[item.action] = this.shortcutFromEvent(event);
+        }
+        this.saveCustomShortcuts();
+        this.shortcutIndex = this.buildShortcutIndex();
+        this.renderShortcutEditor();
+        this.renderCommandPalette();
+      });
+      row.append(label, input);
+      list.appendChild(row);
+    });
+  }
+
+  openShortcutsDialog() {
+    const dialog = document.getElementById('shortcutsDialog');
+    if (!dialog) return;
+    this.renderShortcutEditor();
+    if (!dialog.open) dialog.showModal();
+  }
+
   openCommandPalette() {
     const dialog = document.getElementById('commandPaletteDialog');
     const input = document.getElementById('commandPaletteInput');
@@ -921,7 +1191,7 @@ class App {
       const label = document.createElement('span');
       const shortcut = document.createElement('kbd');
       label.textContent = item.label;
-      shortcut.textContent = item.shortcut || '';
+      shortcut.textContent = item.shortcut ? this.formatShortcut(item.shortcut) : '';
       button.append(label, shortcut);
       button.addEventListener('click', () => this.executeCommandPaletteItem(item.action));
       list.appendChild(button);
@@ -1508,14 +1778,20 @@ class App {
     clearTimeout(this.autosaveTimer);
     try {
       const project = this.serializeProject();
-      try {
-        localStorage.setItem('rigel-project', JSON.stringify(project));
-      } catch (storageError) {
-        localStorage.removeItem('rigel-project');
+      if (this.preferIndexedProjectStore) {
         this.saveProjectRecord(project).catch((error) => console.warn('Project database fallback failed', error));
-        if (!this.localProjectStorageWarningShown) {
-          this.localProjectStorageWarningShown = true;
-          console.warn('Local project cache was too large; IndexedDB fallback is used', storageError);
+      } else {
+        try {
+          localStorage.setItem('rigel-project', JSON.stringify(project));
+        } catch (storageError) {
+          this.preferIndexedProjectStore = true;
+          localStorage.setItem('rigel-prefer-indexed-project-store', 'true');
+          localStorage.removeItem('rigel-project');
+          this.saveProjectRecord(project).catch((error) => console.warn('Project database fallback failed', error));
+          if (!this.localProjectStorageWarningShown) {
+            this.localProjectStorageWarningShown = true;
+            console.warn('Local project cache was too large; IndexedDB fallback is used', storageError);
+          }
         }
       }
       this.updateRecentProjects(project);
@@ -2843,9 +3119,6 @@ class App {
   updateRecentProjects(project) {
     this.saveProjectRecord(project).catch((error) => console.warn('Project database save failed', error));
     const previousRecent = this.readRecentProjects();
-    previousRecent.forEach((item) => {
-      if (item.data?.id) this.saveProjectRecord(item.data).catch(() => {});
-    });
     const recent = previousRecent
       .filter((item) => item.id !== this.projectId)
       .map((item) => this.compactRecentProject(item));
@@ -2855,6 +3128,7 @@ class App {
       width: this.grid.width,
       height: this.grid.height,
       modified: new Date().toISOString(),
+      previewImage: this.cachedRecentPreviewImage(project),
       data: project,
     }));
 
@@ -2872,6 +3146,18 @@ class App {
       }
       console.warn('Recent projects were saved without previews', error);
     }
+  }
+
+  cachedRecentPreviewImage(project) {
+    const now = performance.now();
+    if (this.recentPreviewCache.image && now - this.recentPreviewCache.time < 3500) {
+      return this.recentPreviewCache.image;
+    }
+    this.recentPreviewCache = {
+      image: this.createRecentPreviewImage(project),
+      time: now,
+    };
+    return this.recentPreviewCache.image;
   }
 
   compactRecentProject(item) {
@@ -3684,11 +3970,13 @@ class App {
   openLightingPanel() {
     const panel = document.getElementById('lightingPanel');
     if (!panel) return;
+    document.querySelector('.editor-layout')?.classList.remove('hide-inspector');
     const wasHidden = panel.hidden === true;
     if (!this.lighting.docked && (wasHidden || (!panel.style.left && !panel.style.top))) {
       this.dockLightingPanel({ save: false });
     }
     panel.hidden = false;
+    panel.scrollIntoView?.({ block: 'nearest' });
     this.updateLightingControls();
     if (!this.lighting.docked && !panel.style.left) {
       panel.style.left = `${Math.max(100, window.innerWidth - 600)}px`;
@@ -4869,6 +5157,65 @@ class App {
     dialog.showModal();
   }
 
+  openTextExportDialog(format = 'ansi') {
+    const dialog = document.getElementById('textExportDialog');
+    const formatSelect = document.getElementById('textExportFormat');
+    if (!dialog || !formatSelect) {
+      this.downloadFile(new Blob([this.textExportSource(format)], { type: 'text/plain;charset=utf-8' }), this.textExportFilename(format));
+      return;
+    }
+    formatSelect.value = format === 'txt' ? 'txt' : 'ansi';
+    this.updateTextExportPreview();
+    dialog.showModal();
+  }
+
+  textExportFormat() {
+    return document.getElementById('textExportFormat')?.value === 'txt' ? 'txt' : 'ansi';
+  }
+
+  textExportSource(format = this.textExportFormat()) {
+    const source = format === 'txt' ? this.exporter.toPlainText() : this.exporter.toAnsiText();
+    return document.getElementById('textExportLineEndings')?.value === 'crlf'
+      ? source.replace(/\r?\n/g, '\r\n')
+      : source.replace(/\r\n/g, '\n');
+  }
+
+  textExportDisplaySource(format = this.textExportFormat()) {
+    const source = this.textExportSource(format);
+    if (format !== 'ansi') return source || 'пустой холст';
+    return (source || 'пустой холст')
+      .replace(/\x1b/g, '\\x1b')
+      .replace(/\r/g, '\\r');
+  }
+
+  textExportFilename(format = this.textExportFormat()) {
+    const activeDocument = this.documents.find((item) => item.id === this.activeDocumentId);
+    const extension = format === 'txt' ? 'txt' : 'ans';
+    return `${this.projectName}-${activeDocument?.name || 'art'}.${extension}`;
+  }
+
+  updateTextExportPreview() {
+    const format = this.textExportFormat();
+    const preview = document.getElementById('textExportPreview');
+    const name = document.getElementById('textExportPreviewName');
+    const stats = document.getElementById('textExportCodeStats');
+    const note = document.getElementById('textExportFormatNote');
+    const download = document.getElementById('downloadTextExportBtn');
+    const raw = this.textExportSource(format);
+    const display = this.textExportDisplaySource(format);
+    if (preview) preview.textContent = display;
+    if (name) name.textContent = format === 'txt' ? 'preview.txt' : 'preview.ans';
+    if (note) note.textContent = format === 'txt'
+      ? 'TXT сохраняет только символы без цветов.'
+      : 'ANSI сохраняет настоящие цветовые escape-коды; в предпросмотре ESC показан как \\x1b.';
+    if (download) download.textContent = format === 'txt' ? 'Файл .txt' : 'Файл .ans';
+    if (stats) {
+      const lines = raw ? raw.split(/\r?\n/).length : 0;
+      const bytes = new Blob([raw]).size;
+      stats.textContent = `${lines} lines · ${this.formatBytes(bytes)}`;
+    }
+  }
+
   goExportOptions() {
     return {
       mode: document.getElementById('goExportMode')?.value || 'full',
@@ -5021,6 +5368,16 @@ class App {
 
   downloadGoExport() {
     this.downloadFile(new Blob([this.goExportSource()], { type: 'text/x-go;charset=utf-8' }), this.goExportFilename());
+  }
+
+  copyTextExport() {
+    const format = this.textExportFormat();
+    this.copyToClipboard(this.textExportSource(format), format === 'txt' ? 'TXT скопирован' : 'ANSI скопирован');
+  }
+
+  downloadTextExport() {
+    const format = this.textExportFormat();
+    this.downloadFile(new Blob([this.textExportSource(format)], { type: 'text/plain;charset=utf-8' }), this.textExportFilename(format));
   }
 
   updateImageExportControls() {
